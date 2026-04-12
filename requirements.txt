@@ -1,0 +1,15 @@
+# Data Collection
+feedparser
+beautifulsoup4
+requests
+
+# AI Generation (Google Gemini & Imagen)
+google-genai
+
+# Voice Rendering
+edge-tts
+
+# Video Assembly & Subtitle Rendering
+moviepy>=2.0
+Pillow
+numpy
