@@ -3,10 +3,10 @@ import glob
 import sys
 import time
 import json
+import sqlite3
+import config
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
-
 from playwright.sync_api import sync_playwright
 
 from uploaders import (
@@ -20,21 +20,34 @@ from uploaders import (
 # 修正 Windows 終端機印出 Emoji 的編碼問題
 sys.stdout.reconfigure(encoding='utf-8')
 
-# --- 路徑設定 ---
-VIDEOS_DIR = "output_videos"
-SCRIPTS_DIR = "output_scripts"
-USER_DATA_DIR = "./playwright_session" # 儲存登入狀態的資料夾
-
-# 載入環境變數
-load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyAQD2UcDDAe5b3c9vToTM2pAl99hIKYA7M")
+# 使用 config 中的設定
+VIDEOS_DIR = config.OUTPUT_VIDEOS
+SCRIPTS_DIR = config.OUTPUT_SCRIPTS
+USER_DATA_DIR = config.PLAYWRIGHT_SESSION_DIR
+GEMINI_API_KEY = config.GEMINI_API_KEY
 
 def get_gemini_client():
     return genai.Client(api_key=GEMINI_API_KEY)
 
+def get_unpublished_video_list():
+    """從資料庫中找出尚未發布 (is_published=0) 的影片檔案列表"""
+    conn = sqlite3.connect(config.DB_PATH)
+    cursor = conn.cursor()
+    # 我們只處理已經標記為 is_processed=1 且尚未歸檔 (is_published=0) 的新聞
+    cursor.execute("SELECT id, category FROM DailyNews WHERE is_processed = 1 AND is_published = 0")
+    records = cursor.fetchall()
+    conn.close()
+    
+    video_files = []
+    for news_id, category in records:
+        basename = f"script_{category}_{news_id}"
+        video_path = os.path.join(VIDEOS_DIR, f"{basename}_subtitled.mp4")
+        if os.path.exists(video_path):
+            video_files.append(video_path)
+    return video_files
+
 def extract_basename(video_path: str) -> str:
     """從影片名稱中擷取出腳本原始 BaseName (例如 script_Finance_8)"""
-    # 預期如: output_videos\script_Finance_8_subtitled.mp4
     filename = os.path.basename(video_path)
     return filename.replace("_subtitled.mp4", "")
 
@@ -52,7 +65,7 @@ def generate_marketing_copy(script_text: str):
     
     try:
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=config.GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=sys_instruction,
@@ -75,24 +88,22 @@ def launch_login_mode():
     print("- Facebook (business.facebook.com)")
     print("- Instagram (instagram.com)")
     print("- TikTok (tiktok.com)")
-    # print("- 小紅書 (creator.xiaohongshu.com)") # 暫時關閉小紅書
     print("登入完成後，只要把瀏覽器關閉，登入狀態就會自動儲存在本地！\n")
     
     with sync_playwright() as p:
-        # 修正 Google 阻擋登入機制的關鍵參數
         browser = p.chromium.launch_persistent_context(
             user_data_dir=USER_DATA_DIR,
             headless=False,
             channel="chrome",
-            ignore_default_args=["--enable-automation"], # 移除上方自動化控制列
-            args=["--disable-blink-features=AutomationControlled"] # 假裝為正常瀏覽器
+            ignore_default_args=["--enable-automation"],
+            args=["--disable-blink-features=AutomationControlled"]
         )
         page = browser.new_page()
-        page.goto("https://www.google.com") # 預設首頁
+        page.goto("https://www.google.com")
         
         print("🌍 瀏覽器已開啟！請開始您的登入作業。登入完畢請直接關閉瀏覽器。")
         try:
-            page.wait_for_timeout(999999999) # 等待直到使用者手動關閉視窗
+            page.wait_for_timeout(999999999)
         except:
             pass
         finally:
@@ -104,10 +115,10 @@ def main():
     print("  🚀 模組八：多平台自動發布機器人")
     print("========================================")
 
-    # 1. 尋找可以發布的影片
-    video_files = glob.glob(os.path.join(VIDEOS_DIR, "*_subtitled.mp4"))
+    # 1. 尋找可以發布的影片 (排除已歸檔項目)
+    video_files = get_unpublished_video_list()
     if not video_files:
-        print(f"❌ 在 {VIDEOS_DIR} 找不到任何帶有字幕的完成品影片 (*_subtitled.mp4)。")
+        print(f"目前沒有待上傳的影片 (或是影片已歸檔)。")
         print("👉 如果您想登入平台，請輸入 D:")
         choice = input("> ").strip().upper()
         if choice == 'D':
@@ -145,13 +156,12 @@ def main():
     
     print(f"\n✅ 已選擇 {len(selected_videos)} 部影片準備發布！")
     
-    # --- 平台選擇介面 (一次選擇，套用到所有影片) ---
+    # --- 平台選擇介面 ---
     print("\n🌐 請問您要將這些影片發布到哪些平台？")
     print("  [1] YouTube Shorts")
     print("  [2] Facebook Reels")
     print("  [3] Instagram Reels")
     print("  [4] TikTok")
-    # print("  [5] 小紅書 (暫不開放)")
     print("  [6] 🔥 全部發布 (1~4)")
     print("  [Q] 退出取消")
     
@@ -174,7 +184,7 @@ def main():
         print("❌ 未選擇任何有效的平台，已退出。")
         return
 
-    # 啟動 Playwright (一個瀏覽器持續處理所有影片)
+    # 啟動 Playwright
     print("\n🚀 啟動自動化發布程序...")
     with sync_playwright() as p:
         browser = p.chromium.launch_persistent_context(
@@ -186,7 +196,6 @@ def main():
         )
         page = browser.new_page()
 
-        # 針對每一部影片執行完整文案生成與上傳
         for i, selected_video in enumerate(selected_videos, 1):
             print(f"\n========================================")
             print(f" 🎬 處理影片 ({i}/{len(selected_videos)}): {os.path.basename(selected_video)}")
@@ -199,10 +208,7 @@ def main():
             if os.path.exists(script_json_path):
                 with open(script_json_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if "script" in data:
-                        script_text = data.get("script", "")
-                    else:
-                        script_text = f"{data.get('intro', '')} {data.get('main_content', '')} {data.get('outro', '')}"
+                    script_text = f"{data.get('intro', '')} {data.get('main_content', '')} {data.get('outro', '')}"
 
             print("🧠 正在呼叫 Gemini 生成吸睛標題與 Hashtags...")
             marketing_data = generate_marketing_copy(script_text)
@@ -212,15 +218,10 @@ def main():
             print(f"  📌 標題：{title}")
             print(f"  🏷️ 標籤：{tags}")
             
-            # 依序派發給不同的 Uploader 執行
-            if 1 in targets:
-                YouTubeUploader(page).upload(os.path.abspath(selected_video), title, tags)
-            if 2 in targets:
-                FacebookUploader(page).upload(os.path.abspath(selected_video), title, tags)
-            if 3 in targets:
-                InstagramUploader(page).upload(os.path.abspath(selected_video), title, tags)
-            if 4 in targets:
-                TikTokUploader(page).upload(os.path.abspath(selected_video), title, tags)
+            if 1 in targets: YouTubeUploader(page).upload(os.path.abspath(selected_video), title, tags)
+            if 2 in targets: FacebookUploader(page).upload(os.path.abspath(selected_video), title, tags)
+            if 3 in targets: InstagramUploader(page).upload(os.path.abspath(selected_video), title, tags)
+            if 4 in targets: TikTokUploader(page).upload(os.path.abspath(selected_video), title, tags)
             
         print("\n🎉 所有指定影片發布腳本執行完畢！瀏覽器將在 5 秒後自動關閉...")
         time.sleep(5)

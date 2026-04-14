@@ -1,8 +1,8 @@
-import sqlite3
 import json
 import os
-from collections import defaultdict
 import sys
+import sqlite3
+import config
 from google import genai
 from google.genai import types
 
@@ -13,11 +13,10 @@ print("  🧠 AI 劇本生成中心 (最新 GenAI 套件版) ")
 print("=============================")
 
 # 1. 初始化最新的 Gemini API 
-API_KEY = "AIzaSyAQD2UcDDAe5b3c9vToTM2pAl99hIKYA7M"
-client = genai.Client(api_key=API_KEY)
+client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 # 2. 連線資料庫
-conn = sqlite3.connect('auto_channel.db')
+conn = sqlite3.connect(config.DB_PATH)
 cursor = conn.cursor()
 
 # 3. 撈取「已選定 (is_selected = 1)」且「未處理 (is_processed = 0)」的新聞
