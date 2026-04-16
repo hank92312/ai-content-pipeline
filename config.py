@@ -12,6 +12,7 @@ OUTPUT_VIDEOS = os.path.join(BASE_DIR, "output_videos")
 OUTPUT_SCRIPTS = os.path.join(BASE_DIR, "output_scripts")
 OUTPUT_VOICES = os.path.join(BASE_DIR, "output_voices")
 OUTPUT_IMAGES = os.path.join(BASE_DIR, "output_images")
+ASSETS_DIR = os.path.join(BASE_DIR, "assets")
 
 # 歸檔目錄
 ARCHIVE_DIR = os.path.join(BASE_DIR, "archive")
@@ -34,6 +35,6 @@ TTS_SPEED = "+25%"  # 語速加快 25%
 GEMINI_MODEL = "gemini-2.5-flash"
 
 # 確保所有輸出目錄都存在
-for path in [OUTPUT_VIDEOS, OUTPUT_SCRIPTS, OUTPUT_VOICES, OUTPUT_IMAGES, ARCHIVE_DIR, DEBUG_LOGS_DIR, COMPLETED_ARCHIVE_DIR]:
+for path in [OUTPUT_VIDEOS, OUTPUT_SCRIPTS, OUTPUT_VOICES, OUTPUT_IMAGES, ASSETS_DIR, ARCHIVE_DIR, DEBUG_LOGS_DIR, COMPLETED_ARCHIVE_DIR]:
     if not os.path.exists(path):
         os.makedirs(path)

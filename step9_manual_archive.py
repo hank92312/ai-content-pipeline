@@ -1,9 +1,14 @@
+import sys
 import os
 import shutil
 import sqlite3
 import config
 
 def main():
+    # 強制設定 stdout 使用 UTF-8 編碼，避免 Windows cp950 報錯
+    if sys.stdout.encoding.lower() != 'utf-8':
+        sys.stdout.reconfigure(encoding='utf-8')
+
     print("========================================")
     print("  📁 模組九：影片完工歸檔中心")
     print("========================================")
@@ -86,28 +91,58 @@ def main():
         except Exception as e:
             print(f"   ⚠️ 影片搬移失敗: {e}")
 
-        # B. 搬移素材檔案 (json, txt, wav)
-        assets = [
+        # B. 搬移素材檔案 (json, txt, wav, jpg)
+        assets_to_check = [
             (config.OUTPUT_SCRIPTS, f"{item['basename']}.json"),
             (config.OUTPUT_SCRIPTS, f"{item['basename']}.txt"),
-            (config.OUTPUT_VOICES, f"{item['basename']}.wav")
+            (config.OUTPUT_VOICES, f"{item['basename']}.wav"),
+            (config.OUTPUT_VOICES, f"{item['basename']}_final.wav"),
+            (config.OUTPUT_VOICES, f"{item['basename']}_tts.wav"),
+            (config.OUTPUT_VOICES, f"{item['basename']}_subs.json"),
+            (config.OUTPUT_IMAGES, f"{item['basename']}_0.jpg"),
+            (config.OUTPUT_IMAGES, f"{item['basename']}_1.jpg"),
+            (config.ASSETS_DIR, f"ID{item['id']}.mp4"),
+            (config.ASSETS_DIR, f"ID{item['id']}.jpg"),
+            (config.ASSETS_DIR, f"ID{item['id']}.mp3"),
         ]
         
-        for folder, filename in assets:
+        for folder, filename in assets_to_check:
             src = os.path.join(folder, filename)
             if os.path.exists(src):
                 try:
                     shutil.move(src, os.path.join(config.COMPLETED_ASSETS_DIR, filename))
+                    print(f"   ✅ 已搬移素材: {filename}")
                 except Exception as e:
                     print(f"   ⚠️ 素材 {filename} 搬移失敗: {e}")
 
-        # C. 更新資料庫
+        # C. 刪除原始無字幕影片 (僅保留上字幕後的歸檔版本)
+        raw_video = os.path.join(config.OUTPUT_VIDEOS, f"{item['basename']}.mp4")
+        if os.path.exists(raw_video):
+            try:
+                os.remove(raw_video)
+                print(f"   🗑️ 已刪除原始無字幕影片: {os.path.basename(raw_video)}")
+            except Exception as e:
+                print(f"   ⚠️ 刪除原始影片失敗: {e}")
+
+        # D. 更新資料庫
         cursor.execute("UPDATE DailyNews SET is_published = 1 WHERE id = ?", (item['id'],))
         print(f"   ✅ 資料庫已標記為已發布 (is_published = 1)")
 
     conn.commit()
+    
+    # E. 清理未被選中的新聞標題 (is_selected = 0)
+    print("\n🧹 正在清理資料庫中未被選中的舊新聞標題...")
+    try:
+        cursor.execute("DELETE FROM DailyNews WHERE is_selected = 0")
+        deleted_count = cursor.rowcount
+        conn.commit()
+        print(f"   ✅ 已成功清除 {deleted_count} 筆未選中的標題，資料庫已重置。")
+    except Exception as e:
+        print(f"   ⚠️ 資料庫清理失敗: {e}")
+
     conn.close()
-    print("\n🎉 歸檔作業完成！這些影片將不再出現在待發布清單中。")
+    print("\n🎉 歸檔作業與資料庫整理完成！")
+    print("   目前的資料庫僅保留正在處理或已歸檔的資料，方便下次重新爬蟲。")
 
 if __name__ == "__main__":
     main()
