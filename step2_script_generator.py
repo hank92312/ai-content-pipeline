@@ -21,7 +21,7 @@ cursor = conn.cursor()
 
 # 3. 撈取「已選定 (is_selected = 1)」且「未處理 (is_processed = 0)」的新聞
 # 加入 IFNULL 為了相容之前的資料，若沒圖片就給空字串
-cursor.execute("SELECT id, category, title, IFNULL(image_url, '') FROM DailyNews WHERE is_processed = 0 AND is_selected = 1")
+cursor.execute("SELECT id, category, title, IFNULL(image_url, ''), IFNULL(content, '') FROM DailyNews WHERE is_processed = 0 AND is_selected = 1")
 selected_news = cursor.fetchall()
 
 if not selected_news:
@@ -30,7 +30,7 @@ if not selected_news:
 
 # 4. 針對「每一則」新聞自動生成對應的腳本
 for news in selected_news:
-    db_id, category, title, image_url = news
+    db_id, category, title, image_url, content = news
     print(f"\n🎬 正在產製 [{category}] 類別的影片腳本 (新聞ID: {db_id})...")
     
     tone = "專業、充滿自信且帶有一點懸疑感" if category == "Finance" else "熱情、激動、像個資深玩家"
@@ -47,6 +47,9 @@ for news in selected_news:
     
     【今日新聞標題】：
     {title}
+    
+    【今日新聞內容（背景參考）】：
+    {content if content else "(無完整內容，請僅依據標題發揮)"}
     
     【腳本結構與寫作要求】
     1. 開場白 (intro)：不要用死板的「歡迎回到...」。請根據新聞最勁爆的點，動態生成「三秒內抓住眼球」的破題開場。

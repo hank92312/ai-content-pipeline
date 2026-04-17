@@ -1,0 +1,12 @@
+{
+    "terminal.integrated.profiles.windows": {
+        "AutoEnv CMD": {
+            "path": "cmd.exe",
+            "args": [
+                "/k",
+                "${workspaceFolder}\\.venv\\Scripts\\activate.bat"
+            ]
+        }
+    },
+    "terminal.integrated.defaultProfile.windows": "AutoEnv CMD"
+}

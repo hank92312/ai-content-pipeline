@@ -33,7 +33,7 @@ EDGE_TTS_PITCH = "+0Hz"  # 音調微調
 # RVC模型存於 RVC1006AMD_Intel1 資料夾。在此指定檔名即可 (需位於 assets/weights)。
 RVC_MODEL_NAME    = "AutoChannel_Voice.pth"  
 RVC_INDEX_PATH    = ""   # 如果有 .index 檔案可以設定絕對路徑，沒有就留空
-RVC_F0_UP_KEY     = "0"  # 調整：男性基底轉男性角色，偏移設為 0
+RVC_F0_UP_KEY     = "2"  # 調整：提高 2 以增加活潑感 (原為 1)
 
 # --- 路徑設定 ---
 SCRIPTS_DIR = "output_scripts"

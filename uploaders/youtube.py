@@ -11,16 +11,23 @@ class YouTubeUploader(PlaywrightUploaderBase):
         try:
             print("    [YouTube] 正在前往 YouTube Studio...")
             self.page.goto("https://studio.youtube.com/")
-            # 根據診斷結果，直接等待 #upload-button 出現
-            self.page.wait_for_selector("#upload-button", timeout=30000)
-
-            # 1. 省略「建立」步驟 — 診斷確認 #upload-button 直接在首頁上
-            print("    [YouTube] 1. 直接點擊上傳按鈕...")
-            self.page.locator("#upload-button").first.click()
+            # 1. 點擊右上方「建立」按鈕
+            print("    [YouTube] 1. 點擊右上方「建立」按鈕...")
+            # 支援中文「建立」與英文「Create」，優先使用唯一 ID #create-icon
+            create_btn = self.page.locator("#create-icon, button:has-text('建立'), button:has-text('Create')").first
+            create_btn.wait_for(state="visible", timeout=30000)
+            create_btn.click()
             time.sleep(1)
 
-            # 2. 填入影片檔案 (Playwright 攔截隱藏的 input)
-            print("    [YouTube] 2. 正在送入影片檔案...")
+            # 2. 點擊選單中的「上傳影片」
+            print("    [YouTube] 2. 點擊「上傳影片」選項...")
+            upload_option = self.page.locator("tp-yt-paper-item:has-text('上傳影片'), tp-yt-paper-item:has-text('Upload videos')").first
+            upload_option.wait_for(state="visible", timeout=10000)
+            upload_option.click()
+            time.sleep(2)
+
+            # 3. 填入影片檔案 (Playwright 攔截隱藏的 input)
+            print("    [YouTube] 3. 正在送入影片檔案...")
             file_input = self.page.locator("input[type='file']").first
             file_input.wait_for(state="attached", timeout=10000)
             file_input.set_input_files(video_path)

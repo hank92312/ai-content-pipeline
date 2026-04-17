@@ -36,7 +36,19 @@ if not json_files:
     exit()
 
 def download_image(url):
-    """下載原圖並轉為 PIL Image 供 Gemini 解讀"""
+    """取得圖片：支援 http(s) 網路連結或本地檔案路徑"""
+    if not url:
+        return None
+        
+    # 檢查是否為本地路徑
+    if os.path.exists(url):
+        try:
+            return Image.open(url)
+        except Exception as e:
+            print(f"    ❌ 讀取本地圖片失敗 [{url}]: {e}")
+            return None
+
+    # 反之視為網路連結
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
@@ -48,7 +60,7 @@ def download_image(url):
         response.raise_for_status()
         return Image.open(io.BytesIO(response.content))
     except Exception as e:
-        print(f"    ❌ 下載原圖失敗 [{url}]: {e}")
+        print(f"    ❌ 下排原圖失敗 (非本地檔案，試圖從網路抓取時報錯) [{url}]: {e}")
         return None
 
 def analyze_image_with_gemini(pil_image):

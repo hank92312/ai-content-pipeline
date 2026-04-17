@@ -121,13 +121,18 @@ def main():
     mode = 1
     if len(sys.argv) > 1 and sys.argv[1] == "--mode=2":
         mode = 2
+    elif len(sys.argv) > 1 and sys.argv[1] == "--mode=3":
+        mode = 3
     elif len(sys.argv) <= 1:
         print("\n請選擇影片製作模式：")
         print("1: 原模式 (自動分配生成的圖片和配音製作)")
         print("2: 素材模式 (從 assets 資料夾找取同新聞ID的素材製作影片)")
-        ans = input("請選擇 (1 或 2，預設 1): ").strip()
+        print("3: 去主播素材模式 (素材模式，但不疊加 sample.png)")
+        ans = input("請選擇 (1, 2 或 3，預設 1): ").strip()
         if ans == "2":
             mode = 2
+        elif ans == "3":
+            mode = 3
 
 
     os.makedirs(VIDEOS_DIR, exist_ok=True)
@@ -183,8 +188,8 @@ def main():
             bg_clip = bg_clip.with_audio(audio_clip) 
             
             final_clips = [bg_clip]
-        else:
-            # 2. 素材模式尋找對應的影片、圖片與音效
+        elif mode in [2, 3]:
+            # 2 & 3. 素材模式尋找對應的影片、圖片與音效
             m = re.search(r'_(\d+)$', basename)
             if not m:
                 print(f"  ❌ 無法從 {basename} 解析新聞ID，跳過素材模式")
@@ -192,11 +197,17 @@ def main():
             news_id = m.group(1)
             
             asset_mp4 = os.path.join("assets", f"ID{news_id}.mp4")
-            asset_jpg = os.path.join("assets", f"ID{news_id}.jpg")
+            # 支援多種圖片格式作為轉場圖
+            asset_jpg = None
+            for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+                test_path = os.path.join("assets", f"ID{news_id}{ext}")
+                if os.path.exists(test_path):
+                    asset_jpg = test_path
+                    break
             asset_mp3 = os.path.join("assets", f"ID{news_id}.mp3")
             
-            if not (os.path.exists(asset_mp4) and os.path.exists(asset_jpg) and os.path.exists(asset_mp3)):
-                print(f"  ❌ 找不到 assets 相關素材 (ID{news_id}.mp4, .jpg, .mp3 需要同時存在)，跳過...")
+            if not (os.path.exists(asset_mp4) and asset_jpg and os.path.exists(asset_mp3)):
+                print(f"  ❌ 找不到 assets 相關素材 (ID{news_id}.mp4, 圖片, .mp3 需要同時存在)，跳過...")
                 continue
                 
             print(f"  🎨 使用短影音素材模式處理影片：ID{news_id}")
@@ -224,8 +235,8 @@ def main():
             final_clips = [bg_clip]
 
         
-        # 4. 疊加頭像
-        if has_avatar:
+        # 4. 疊加頭像 (模式 3 跳過)
+        if has_avatar and mode != 3:
             print("  🙎‍♀️ 疊加動態/虛擬圖相 (此版本為靜態圖片 sample.png)...")
             avatar_clip = (ImageClip(AVATAR_PATH)
                            .resized(width=680)

@@ -29,16 +29,21 @@ cursor.execute('''
         pub_date TEXT,
         is_processed INTEGER DEFAULT 0,
         is_selected INTEGER DEFAULT 0,
-        image_url TEXT
+        image_url TEXT,
+        content TEXT
     )
 ''')
 conn.commit()
 
 # [自動化小機關]：檢查並新增 image_url 欄位 (支援模組五產圖)
+except sqlite3.OperationalError:
+    pass
+
+# [自動化小機關]：檢查並新增 content 欄位 (支援本地新聞稿全文)
 try:
-    cursor.execute("ALTER TABLE DailyNews ADD COLUMN image_url TEXT")
+    cursor.execute("ALTER TABLE DailyNews ADD COLUMN content TEXT")
     conn.commit()
-    print("🔧 資料庫已升級：新增 image_url 欄位。")
+    print("🔧 資料庫已升級：新增 content 欄位。")
 except sqlite3.OperationalError:
     pass
 
