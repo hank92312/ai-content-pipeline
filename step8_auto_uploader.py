@@ -223,9 +223,10 @@ def main():
             if 3 in targets: InstagramUploader(page).upload(os.path.abspath(selected_video), title, tags)
             if 4 in targets: TikTokUploader(page).upload(os.path.abspath(selected_video), title, tags)
             
-        print("\n🎉 所有指定影片發布腳本執行完畢！瀏覽器將在 5 秒後自動關閉...")
-        time.sleep(5)
-        browser.close()
+        print("\n🎉 所有指定影片發布腳本執行完畢！")
+        print("💡 提示：瀏覽器將保持開啟狀態，供您檢查上傳狀態。")
+        print("          確認無誤後，請直接手動關閉瀏覽器視窗即可。")
+        input("\n👉 按下 [Enter] 鍵結束程式...")
 
 if __name__ == "__main__":
     main()

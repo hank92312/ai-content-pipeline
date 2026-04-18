@@ -3,6 +3,7 @@ import os
 import glob
 import sys
 import edge_tts
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # 修正 Windows 終端機印出 Emoji 的編碼問題
 sys.stdout.reconfigure(encoding='utf-8')
@@ -43,6 +44,12 @@ VOICES_DIR  = "output_voices"
 # ============================================================
 #  核心功能一：edge-tts 文字轉語音
 # ============================================================
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(Exception),
+    before_sleep=lambda retry_state: print(f"   ⚠️  [{retry_state.attempt_number}/5] 連線失敗，將在 {retry_state.next_action.sleep} 秒後重試...")
+)
 async def generate_tts_audio(text: str, output_path: str, output_subs_path: str):
     """使用 edge-tts 將文字轉換為 .wav 音檔，同時儲存時間軸中繼檔"""
     import json
