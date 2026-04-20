@@ -119,20 +119,56 @@ def main():
     print("========================================")
 
     mode = 1
-    if len(sys.argv) > 1 and sys.argv[1] == "--mode=2":
-        mode = 2
-    elif len(sys.argv) > 1 and sys.argv[1] == "--mode=3":
-        mode = 3
+    custom_video = 0  # 0: 不增加, 1: 素材(去聲)
+    custom_image = 0  # 0: 不增加, 1: 素材, 2: 模組生成
+    custom_anchor = 0 # 0: 不加, 1: 加上
+    custom_music = 0  # 0: 不增加, 1: 素材(降音)
+
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "--mode=2":
+            mode = 2
+        elif sys.argv[1] == "--mode=3":
+            mode = 3
+        elif sys.argv[1] == "--mode=4":
+            mode = 4
     elif len(sys.argv) <= 1:
         print("\n請選擇影片製作模式：")
         print("1: 原模式 (自動分配生成的圖片和配音製作)")
         print("2: 素材模式 (從 assets 資料夾找取同新聞ID的素材製作影片)")
         print("3: 去主播素材模式 (素材模式，但不疊加 sample.png)")
-        ans = input("請選擇 (1, 2 或 3，預設 1): ").strip()
+        print("4: 客製化模式 (自由選擇各項來源)")
+        ans = input("請選擇 (1, 2, 3 或 4，預設 1): ").strip()
         if ans == "2":
             mode = 2
         elif ans == "3":
             mode = 3
+        elif ans == "4":
+            mode = 4
+            print("\n【客製化模式設定】")
+            print("▶ 影片來源：")
+            print("  1: 從素材資料夾 (去除本身聲音)")
+            print("  0: 不增加影片")
+            cv = input("請選擇 (預設 1): ").strip()
+            custom_video = 0 if cv == "0" else 1
+            
+            print("\n▶ 圖片來源：")
+            print("  1: 從素材資料夾")
+            print("  2: 模組生成 (output_images)")
+            print("  0: 不增加圖片")
+            ci = input("請選擇 (預設 1): ").strip()
+            custom_image = int(ci) if ci in ["0", "1", "2"] else 1
+            
+            print("\n▶ 主播圖片 (sample.png)：")
+            print("  1: 加上")
+            print("  0: 不加上")
+            ca = input("請選擇 (預設 1): ").strip()
+            custom_anchor = 0 if ca == "0" else 1
+
+            print("\n▶ 音樂來源：")
+            print("  1: 從素材資料夾 (降低音量作為 BGM)")
+            print("  0: 不增加音樂")
+            cm = input("請選擇 (預設 1): ").strip()
+            custom_music = 0 if cm == "0" else 1
 
 
     os.makedirs(VIDEOS_DIR, exist_ok=True)
@@ -234,9 +270,97 @@ def main():
             bg_clip = bg_clip.with_audio(final_audio)
             final_clips = [bg_clip]
 
-        
-        # 4. 疊加頭像 (模式 3 跳過)
-        if has_avatar and mode != 3:
+        elif mode == 4:
+            m = re.search(r'_(\d+)$', basename)
+            news_id = m.group(1) if m else None
+            
+            print(f"  🎨 使用客製化模式處理影片：{basename}")
+            
+            bg_video_clip = None
+            if custom_video == 1 and news_id:
+                asset_mp4 = os.path.join("assets", f"ID{news_id}.mp4")
+                if os.path.exists(asset_mp4):
+                    bg_video = VideoFileClip(asset_mp4).without_audio()
+                    bg_video_clip = bg_video.resized(TARGET_RESOLUTION)
+                else:
+                    print(f"  ⚠️ 無法找到素材影片 {asset_mp4}")
+            
+            # --- 準備圖片序列 ---
+            img_clip_list = []
+            if custom_image == 1 and news_id:
+                asset_img = None
+                for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+                    test_path = os.path.join("assets", f"ID{news_id}{ext}")
+                    if os.path.exists(test_path):
+                        asset_img = test_path
+                        break
+                if asset_img:
+                    img_clip_list.append(asset_img)
+                else:
+                    print(f"  ⚠️ 無法找到素材圖片 ID{news_id}.*")
+            elif custom_image == 2:
+                pattern = os.path.join(IMAGES_DIR, f"{basename}_*.jpg")
+                mod_imgs = glob.glob(pattern)
+                if mod_imgs:
+                    img_clip_list = sorted(mod_imgs, key=extract_image_index)
+                else:
+                    print(f"  ⚠️ 無法找到模組生成圖片 {pattern}")
+                    
+            # --- 組合影像底圖 ---
+            if bg_video_clip is not None:
+                if len(img_clip_list) > 0:
+                    # 有影片 + 有圖片 => 影片播到最後5秒接圖片
+                    loop_dur = max(0, audio_duration - 5)
+                    bg_video_looped = bg_video_clip.with_effects([vfx.Loop(duration=loop_dur)])
+                    
+                    target_img = img_clip_list[-1]
+                    bg_img_clip = ImageClip(target_img).with_duration(5).resized(TARGET_RESOLUTION).with_effects([vfx.CrossFadeIn(1.0)])
+                    
+                    bg_clip = concatenate_videoclips([bg_video_looped, bg_img_clip], padding=-1.0, method="compose")
+                else:
+                    # 只有影片 => Loop播滿
+                    bg_clip = bg_video_clip.with_effects([vfx.Loop(duration=audio_duration)])
+            else:
+                if len(img_clip_list) > 0:
+                    # 只有圖片 => 均分圖片顯示時間
+                    time_per_image = audio_duration / len(img_clip_list)
+                    processed_clips = []
+                    for i, img_path in enumerate(img_clip_list):
+                        clip = ImageClip(img_path).with_duration(time_per_image).resized(TARGET_RESOLUTION)
+                        if i > 0:
+                            processed_clips.append(clip.with_effects([vfx.CrossFadeIn(1.0)]))
+                        else:
+                            processed_clips.append(clip)
+                    bg_clip = concatenate_videoclips(processed_clips, padding=-1.0, method="compose")
+                else:
+                    # 完全沒畫面，給黑屏
+                    black_frame = np.zeros((1920, 1080, 3), dtype=np.uint8)
+                    bg_clip = ImageClip(black_frame).with_duration(audio_duration)
+            
+            # --- 合聲音樂 ---
+            final_audio = audio_clip
+            if custom_music == 1 and news_id:
+                asset_mp3 = os.path.join("assets", f"ID{news_id}.mp3")
+                if os.path.exists(asset_mp3):
+                    bgm_clip = AudioFileClip(asset_mp3).with_effects([
+                        afx.AudioLoop(duration=audio_duration),
+                        afx.MultiplyVolume(0.15)
+                    ])
+                    final_audio = CompositeAudioClip([bgm_clip, audio_clip]).with_duration(audio_duration)
+                else:
+                    print(f"  ⚠️ 無法找到素材音樂 {asset_mp3}")
+            
+            bg_clip = bg_clip.with_audio(final_audio)
+            final_clips = [bg_clip]
+
+        # 4. 疊加頭像
+        add_avatar = False
+        if mode in [1, 2]:
+            add_avatar = has_avatar
+        elif mode == 4:
+            add_avatar = has_avatar and (custom_anchor == 1)
+
+        if add_avatar:
             print("  🙎‍♀️ 疊加動態/虛擬圖相 (此版本為靜態圖片 sample.png)...")
             avatar_clip = (ImageClip(AVATAR_PATH)
                            .resized(width=680)
