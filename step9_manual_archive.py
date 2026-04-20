@@ -102,9 +102,12 @@ def main():
             (config.OUTPUT_IMAGES, f"{item['basename']}_0.jpg"),
             (config.OUTPUT_IMAGES, f"{item['basename']}_1.jpg"),
             (config.ASSETS_DIR, f"ID{item['id']}.mp4"),
-            (config.ASSETS_DIR, f"ID{item['id']}.jpg"),
             (config.ASSETS_DIR, f"ID{item['id']}.mp3"),
         ]
+        
+        # 擴充：支援多種圖片格式素材 (jpg, jpeg, png, webp)
+        for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+            assets_to_check.append((config.ASSETS_DIR, f"ID{item['id']}{ext}"))
         
         for folder, filename in assets_to_check:
             src = os.path.join(folder, filename)
