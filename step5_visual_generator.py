@@ -111,8 +111,8 @@ for json_path in json_files:
     news_sources = data.get("news_sources", [])
     visual_prompts = data.get("visual_prompts", [])
     
-    # 限制最多產生 2 張圖 (對應 30 秒影片的最佳配置)
-    for i, ai_prompt in enumerate(visual_prompts[:2]):
+    # 根據腳本提供的提示詞數量產生圖片 (支援 30秒 2張 或 60秒 4張)
+    for i, ai_prompt in enumerate(visual_prompts):
         print(f"\n  🎨 準備生成第 {i+1} 張配圖...")
         image_description_text = ""
         
