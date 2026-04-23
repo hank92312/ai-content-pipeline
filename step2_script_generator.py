@@ -30,12 +30,12 @@ if not selected_news:
 
 # 3.5 選擇生成模式
 print("\n請選擇腳本生成模式：")
-print("[1] 標準模式 (約 30 秒，使用 gemini-2.5-flash，適合快速短影音)")
+print("[1] 標準模式 (約 30 秒，使用 gemini-3-flash，適合快速短影音)")
 print("[2] 專業深入報導 (約 60 秒，內容更豐富完整)")
 mode_choice = input("請輸入選項 (1 或 2，預設為 1): ").strip()
 is_pro_mode = (mode_choice == "2")
 
-target_model = 'gemini-2.5-flash'
+target_model = 'gemini-3-flash'
 if is_pro_mode:
     print("\n請選擇專業模式要使用的模型：")
     print("[1] gemini-2.5-pro (穩定高階)")
