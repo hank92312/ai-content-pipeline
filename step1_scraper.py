@@ -8,6 +8,7 @@ import json
 from bs4 import BeautifulSoup
 from google import genai
 from google.genai import types
+import calendar
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -36,6 +37,10 @@ cursor.execute('''
 conn.commit()
 
 # [自動化小機關]：檢查並新增 image_url 欄位 (支援模組五產圖)
+try:
+    cursor.execute("ALTER TABLE DailyNews ADD COLUMN image_url TEXT")
+    conn.commit()
+    print("🔧 資料庫已升級：新增 image_url 欄位。")
 except sqlite3.OperationalError:
     pass
 
@@ -109,34 +114,52 @@ def ai_select_top_n(category, articles, top_n):
         
     return articles[:top_n] # 發生意外時直接取最新
 
-# --- 步驟 A：收集與初步過濾 (24小時內) ---
+# --- 步驟 A：收集與初步過濾 ---
 current_time = time.time()
-SECONDS_IN_A_DAY = 24 * 60 * 60
+TIME_WINDOW_LIMIT = 72 * 60 * 60 # 擴大至 72 小時 (3天) 以涵蓋週末
 
 for src in sources:
     bucket_id = src["bucket"]
     url = src["url"]
     
     print(f"🔍 掃描來源: {url}")
-    feed = feedparser.parse(url)
+    # 增加 User-Agent 以避免被部分網站阻擋 (例如 403 或 404)
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'}
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            print(f"    ❌ 來源請求失敗 (代碼 {response.status_code}): {url}")
+            continue
+        feed = feedparser.parse(response.text)
+    except Exception as e:
+        print(f"    ❌ 來源解析錯誤: {e}")
+        continue
     
     # 每個來源我們最多先考慮前 20 篇，避免 AI token 爆掉或抓太久
     count = 0
     for entry in feed.entries:
         if count >= 20: break
             
-        # 24 小時時效性過濾
+        # 時效性過濾
         pass_time_check = False
+        hours_ago = 0
         if 'published_parsed' in entry and entry.published_parsed:
-            pub_time = time.mktime(entry.published_parsed)
-            if current_time - pub_time <= SECONDS_IN_A_DAY:
+            # feedparser 產出的是 UTC 時間元組，需用 timegm 轉換為 UTC 時間戳
+            pub_time = calendar.timegm(entry.published_parsed)
+            diff_seconds = current_time - pub_time
+            hours_ago = diff_seconds / 3600
+            if diff_seconds <= TIME_WINDOW_LIMIT:
                 pass_time_check = True
         else:
             # 如果 RSS 沒提供標準時間，無條件先放行
             pass_time_check = True
             
         if not pass_time_check:
+            # 可以取消下面這行的註解來觀察被跳過的新聞
+            # print(f"    ⏩ 跳過: {entry.title[:30]}... ({hours_ago:.1f}h ago)")
             continue
+            
+        print(f"    ✅ 發現: {entry.title[:30]}... ({hours_ago:.1f}h ago)")
             
         # 嘗試從 RSS 中擷取現成的圖片網址
         image_url = ""

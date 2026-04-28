@@ -35,7 +35,7 @@ print("[2] 專業深入報導 (約 60 秒，內容更豐富完整)")
 mode_choice = input("請輸入選項 (1 或 2，預設為 1): ").strip()
 is_pro_mode = (mode_choice == "2")
 
-target_model = 'gemini-3-flash'
+target_model = 'gemini-3-flash-preview'
 if is_pro_mode:
     print("\n請選擇專業模式要使用的模型：")
     print("[1] gemini-2.5-pro (穩定高階)")
@@ -43,9 +43,9 @@ if is_pro_mode:
     print("[3] gemini-3.1-pro (最新一代高階)")
     model_choice = input("請輸入選項 (1, 2 或 3，預設為 1): ").strip()
     if model_choice == "2":
-        target_model = 'gemini-3-flash'
+        target_model = 'gemini-3-flash-preview'
     elif model_choice == "3":
-        target_model = 'gemini-3.1-pro'
+        target_model = 'gemini-3.1-pro-preview'
     else:
         target_model = 'gemini-2.5-pro'
     print(f"\n=> 已選擇模型：{target_model}")
@@ -56,10 +56,16 @@ for news in selected_news:
     print(f"\n🎬 正在產製 [{category}] 類別的影片腳本 (新聞ID: {db_id})...")
     
     tone = "專業、充滿自信且帶有一點懸疑感" if category == "Finance" else "熱情、激動、像個資深玩家"
+    if is_pro_mode:
+        tone += "（請注意：現在是【專業深入報導模式】，請稍微收起過度浮誇的娛樂感，切換為資深分析師的口吻，語句需具備嚴密的邏輯推演與專業詞彙，展現強大的專業說服力！）"
     
     video_length = "60" if is_pro_mode else "30"
-    word_limit = "200 到 250" if is_pro_mode else "100 到 120"
-    main_content_limit = "不超過 150 字，請進行更深入的專業分析與多角度報導" if is_pro_mode else "不超過 60 字"
+    word_limit = "350 到 400" if is_pro_mode else "100 到 120"
+    if is_pro_mode:
+        main_content_limit = "字數必須在 280 到 320 字之間。請進行極具深度的專業分析：必須明確包含 (1) 事件核心內幕或背景 (2) 具體的專業數據或技術細節剖析 (3) 對市場/產業的未來影響預測。語氣需展現資深專家的權威與深度，絕不可流於表面報導"
+    else:
+        main_content_limit = "不超過 60 字"
+    
     image_count = 4 if is_pro_mode else 2
     image_prompts_desc = f"""1. 你必須在 `visual_prompts` 陣列中提供「剛好 {image_count} 個」不同的英文生圖提示詞 (Prompts)。
        - 第 1 個提示詞：針對新聞事件本身（開場重點）的畫面設計。

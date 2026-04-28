@@ -18,44 +18,54 @@ def main():
     cursor = conn.cursor()
     cursor.execute("SELECT id, category, title FROM DailyNews WHERE is_processed = 1 AND is_published = 0")
     eligible_news = cursor.fetchall()
-    
-    if not eligible_news:
-        print("目前沒有待歸檔的影片（所有處理中的新聞已發布或尚未產製）。")
-        conn.close()
-        return
 
     # 2. 核對實體檔案是否存在
     to_archive_list = []
-    print("🔍 正在核對實體檔案...")
-    for news_id, category, title in eligible_news:
-        basename = f"script_{category}_{news_id}"
-        video_name = f"{basename}_subtitled.mp4"
-        video_path = os.path.join(config.OUTPUT_VIDEOS, video_name)
-        
-        if os.path.exists(video_path):
-            to_archive_list.append({
-                "id": news_id,
-                "category": category,
-                "title": title,
-                "basename": basename,
-                "video_path": video_path
-            })
+    if eligible_news:
+        print("🔍 正在核對實體檔案...")
+        for news_id, category, title in eligible_news:
+            basename = f"script_{category}_{news_id}"
+            video_name = f"{basename}_subtitled.mp4"
+            video_path = os.path.join(config.OUTPUT_VIDEOS, video_name)
+            
+            if os.path.exists(video_path):
+                to_archive_list.append({
+                    "id": news_id,
+                    "category": category,
+                    "title": title,
+                    "basename": basename,
+                    "video_path": video_path
+                })
 
     if not to_archive_list:
-        print("未在 output_videos 中找到對應的影片檔案。")
-        conn.close()
-        return
-
-    # 3. 顯示選單讓使用者勾選
-    print("\n📦 以下影片已完成產製，請選擇要「歸檔」的項目（代表已確認在各平台發布成功）：")
-    for idx, item in enumerate(to_archive_list):
-        print(f"[{idx}] {item['title']} ({item['video_path']})")
+        print("💡 目前資料庫中沒有「待歸檔」的影片項目。")
+        print("   (如果您想強行清空資料夾中的孤兒檔案，請輸入 RESET)")
+    else:
+        # 3. 顯示選單讓使用者勾選
+        print("\n📦 以下影片已完成產製，請選擇要「歸檔」的項目（代表已確認在各平台發布成功）：")
+        for idx, item in enumerate(to_archive_list):
+            print(f"[{idx}] {item['title']} ({item['video_path']})")
     
     print("--------------------")
-    print("👉 請輸入編號 (多筆請用逗號隔開例如 0,2，或輸入 A 全選，Q 退出)：")
+    print("👉 請輸入編號 (多筆請用逗號隔開例如 0,2，或輸入 A 全選，RESET 清空暫存，Q 退出)：")
     choice = input("> ").strip().upper()
     
     if choice == 'Q':
+        conn.close()
+        return
+
+    if choice == 'RESET':
+        confirm = input("⚠️  確定要清空所有輸出資料夾嗎？檔案將無法復原！(y/N): ").strip().lower()
+        if confirm == 'y':
+            cleanup_output_folders()
+            # 同時清理資料庫中所有已選定但未發布的項目，讓一切重頭開始
+            cursor.execute("UPDATE DailyNews SET is_selected = 0, is_processed = 0 WHERE is_published = 0")
+            conn.commit()
+            print("✅ 暫存資料夾與資料庫狀態已重置。")
+        conn.close()
+        return
+
+    if not eligible_news:
         conn.close()
         return
         
@@ -91,7 +101,8 @@ def main():
         except Exception as e:
             print(f"   ⚠️ 影片搬移失敗: {e}")
 
-        # B. 搬移素材檔案 (json, txt, wav, jpg)
+        # B. 搬移素材檔案 (json, txt, wav, jpg, mp4, mp3...)
+        # 先收集固定名稱的檔案
         assets_to_check = [
             (config.OUTPUT_SCRIPTS, f"{item['basename']}.json"),
             (config.OUTPUT_SCRIPTS, f"{item['basename']}.txt"),
@@ -101,13 +112,7 @@ def main():
             (config.OUTPUT_VOICES, f"{item['basename']}_subs.json"),
             (config.OUTPUT_IMAGES, f"{item['basename']}_0.jpg"),
             (config.OUTPUT_IMAGES, f"{item['basename']}_1.jpg"),
-            (config.ASSETS_DIR, f"ID{item['id']}.mp4"),
-            (config.ASSETS_DIR, f"ID{item['id']}.mp3"),
         ]
-        
-        # 擴充：支援多種圖片格式素材 (jpg, jpeg, png, webp)
-        for ext in [".jpg", ".jpeg", ".png", ".webp"]:
-            assets_to_check.append((config.ASSETS_DIR, f"ID{item['id']}{ext}"))
         
         for folder, filename in assets_to_check:
             src = os.path.join(folder, filename)
@@ -117,6 +122,18 @@ def main():
                     print(f"   ✅ 已搬移素材: {filename}")
                 except Exception as e:
                     print(f"   ⚠️ 素材 {filename} 搬移失敗: {e}")
+
+        # 特別處理 assets/ 資料夾中的所有相關檔案 (IDxx.*, IDxx_*.png 等)
+        import glob
+        asset_pattern = os.path.join(config.ASSETS_DIR, f"ID{item['id']}*")
+        related_assets = glob.glob(asset_pattern)
+        for src in related_assets:
+            filename = os.path.basename(src)
+            try:
+                shutil.move(src, os.path.join(config.COMPLETED_ASSETS_DIR, filename))
+                print(f"   ✅ 已搬移資產素材: {filename}")
+            except Exception as e:
+                print(f"   ⚠️ 資產素材 {filename} 搬移失敗: {e}")
 
         # C. 刪除原始無字幕影片 (僅保留上字幕後的歸檔版本)
         raw_video = os.path.join(config.OUTPUT_VIDEOS, f"{item['basename']}.mp4")
@@ -146,6 +163,28 @@ def main():
     conn.close()
     print("\n🎉 歸檔作業與資料庫整理完成！")
     print("   目前的資料庫僅保留正在處理或已歸檔的資料，方便下次重新爬蟲。")
+
+def cleanup_output_folders():
+    """強行清空暫存資料夾的所有內容"""
+    folders = [
+        config.OUTPUT_SCRIPTS,
+        config.OUTPUT_VOICES,
+        config.OUTPUT_IMAGES,
+        config.OUTPUT_VIDEOS,
+        config.ASSETS_DIR
+    ]
+    for folder in folders:
+        if os.path.exists(folder):
+            print(f"🧹 正在清空: {folder}...")
+            for filename in os.listdir(folder):
+                file_path = os.path.join(folder, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    print(f"   ❌ 無法刪除 {filename}: {e}")
 
 if __name__ == "__main__":
     main()

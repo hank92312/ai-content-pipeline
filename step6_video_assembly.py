@@ -187,6 +187,10 @@ def main():
         basename = os.path.basename(v_path).replace("_final.wav", "")
         print(f"\n▶ 正在合成並上字幕：{basename}")
         
+        # 初始化素材變數，確保每輪循環都能正確釋放
+        bgm_clip = None
+        bg_video = None
+        
         audio_clip = AudioFileClip(v_path)
         audio_duration = audio_clip.duration
         
@@ -233,39 +237,64 @@ def main():
             news_id = m.group(1)
             
             asset_mp4 = os.path.join("assets", f"ID{news_id}.mp4")
-            # 支援多種圖片格式作為轉場圖
-            asset_jpg = None
-            for ext in [".jpg", ".jpeg", ".png", ".webp"]:
-                test_path = os.path.join("assets", f"ID{news_id}{ext}")
-                if os.path.exists(test_path):
-                    asset_jpg = test_path
-                    break
             asset_mp3 = os.path.join("assets", f"ID{news_id}.mp3")
             
-            if not (os.path.exists(asset_mp4) and asset_jpg and os.path.exists(asset_mp3)):
-                print(f"  ❌ 找不到 assets 相關素材 (ID{news_id}.mp4, 圖片, .mp3 需要同時存在)，跳過...")
+            # 尋找圖片序列 (優先找 ID{news_id}_*.jpg，再找單張 ID{news_id}.jpg)
+            asset_img_paths = []
+            for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+                pattern = os.path.join("assets", f"ID{news_id}_*{ext}")
+                asset_img_paths.extend(glob.glob(pattern))
+            
+            if not asset_img_paths:
+                # 沒找到序號圖片，改找單張
+                for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+                    test_path = os.path.join("assets", f"ID{news_id}{ext}")
+                    if os.path.exists(test_path):
+                        asset_img_paths = [test_path]
+                        break
+            
+            asset_img_paths = sorted(asset_img_paths, key=extract_image_index)
+            
+            # 檢查是否至少有圖片素材
+            if not asset_img_paths:
+                print(f"  ❌ 找不到 assets 相關圖片素材 (ID{news_id}.* 或 ID{news_id}_*.jpg)，跳過...")
                 continue
                 
-            print(f"  🎨 使用短影音素材模式處理影片：ID{news_id}")
+            print(f"  🎨 使用素材模式處理影片：ID{news_id} (找到 {len(asset_img_paths)} 張圖片)")
             
-            # 使用 VideoFileClip 匯入並移除原本的音軌
-            bg_video = VideoFileClip(asset_mp4).without_audio()
-            # 播放至前 5 秒
-            loop_dur = max(0, audio_duration - 5)
-            bg_video_looped = bg_video.with_effects([vfx.Loop(duration=loop_dur)]).resized(TARGET_RESOLUTION)
-            
-            # 讀取轉場圖片並給定最後 5 秒
-            bg_img = ImageClip(asset_jpg).with_duration(5).resized(TARGET_RESOLUTION).with_effects([vfx.CrossFadeIn(1.0)])
-            
-            # 組合循環影片和圖片
-            bg_clip = concatenate_videoclips([bg_video_looped, bg_img], padding=-1.0, method="compose")
-            
-            # 放低背景音樂音量並加上原本的配音
-            bgm_clip = AudioFileClip(asset_mp3).with_effects([
-                afx.AudioLoop(duration=audio_duration),
-                afx.MultiplyVolume(0.15)
-            ])
-            final_audio = CompositeAudioClip([bgm_clip, audio_clip]).with_duration(audio_duration)
+            # 準備音訊 (BGM 是選配)
+            if os.path.exists(asset_mp3):
+                bgm_clip = AudioFileClip(asset_mp3).with_effects([
+                    afx.AudioLoop(duration=audio_duration),
+                    afx.MultiplyVolume(0.12)
+                ])
+                final_audio = CompositeAudioClip([bgm_clip, audio_clip]).with_duration(audio_duration)
+            else:
+                final_audio = audio_clip
+
+            # 準備影像
+            if len(asset_img_paths) > 1:
+                # 多張圖模式：圖片平均分配時間
+                time_per_image = audio_duration / len(asset_img_paths)
+                image_clips = []
+                for i, img_path in enumerate(asset_img_paths):
+                    clip = (ImageClip(img_path)
+                            .with_duration(time_per_image)
+                            .resized(TARGET_RESOLUTION))
+                    if i > 0:
+                        clip = clip.with_effects([vfx.CrossFadeIn(1.0)])
+                    image_clips.append(clip)
+                bg_clip = concatenate_videoclips(image_clips, padding=-1.0, method="compose")
+            else:
+                # 單張圖模式：如果有影片就用「影片+5秒圖片」，沒影片就純圖片
+                if os.path.exists(asset_mp4):
+                    bg_video = VideoFileClip(asset_mp4).without_audio()
+                    loop_dur = max(0, audio_duration - 5)
+                    bg_video_looped = bg_video.with_effects([vfx.Loop(duration=loop_dur)]).resized(TARGET_RESOLUTION)
+                    bg_img = ImageClip(asset_img_paths[0]).with_duration(5).resized(TARGET_RESOLUTION).with_effects([vfx.CrossFadeIn(1.0)])
+                    bg_clip = concatenate_videoclips([bg_video_looped, bg_img], padding=-1.0, method="compose")
+                else:
+                    bg_clip = ImageClip(asset_img_paths[0]).with_duration(audio_duration).resized(TARGET_RESOLUTION)
             
             bg_clip = bg_clip.with_audio(final_audio)
             final_clips = [bg_clip]
@@ -288,16 +317,23 @@ def main():
             # --- 準備圖片序列 ---
             img_clip_list = []
             if custom_image == 1 and news_id:
-                asset_img = None
+                # 搜尋素材資料夾中的圖片序列
+                asset_img_paths = []
                 for ext in [".jpg", ".jpeg", ".png", ".webp"]:
-                    test_path = os.path.join("assets", f"ID{news_id}{ext}")
-                    if os.path.exists(test_path):
-                        asset_img = test_path
-                        break
-                if asset_img:
-                    img_clip_list.append(asset_img)
+                    pattern = os.path.join("assets", f"ID{news_id}_*{ext}")
+                    asset_img_paths.extend(glob.glob(pattern))
+                
+                if not asset_img_paths:
+                    for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+                        test_path = os.path.join("assets", f"ID{news_id}{ext}")
+                        if os.path.exists(test_path):
+                            asset_img_paths = [test_path]
+                            break
+                
+                if asset_img_paths:
+                    img_clip_list = sorted(asset_img_paths, key=extract_image_index)
                 else:
-                    print(f"  ⚠️ 無法找到素材圖片 ID{news_id}.*")
+                    print(f"  ⚠️ 無法找到素材圖片 ID{news_id}.* 或 ID{news_id}_*.jpg")
             elif custom_image == 2:
                 pattern = os.path.join(IMAGES_DIR, f"{basename}_*.jpg")
                 mod_imgs = glob.glob(pattern)
@@ -344,7 +380,7 @@ def main():
                 if os.path.exists(asset_mp3):
                     bgm_clip = AudioFileClip(asset_mp3).with_effects([
                         afx.AudioLoop(duration=audio_duration),
-                        afx.MultiplyVolume(0.15)
+                        afx.MultiplyVolume(0.12)
                     ])
                     final_audio = CompositeAudioClip([bgm_clip, audio_clip]).with_duration(audio_duration)
                 else:
@@ -434,8 +470,38 @@ def main():
             print("  🐢 使用標準 CPU 模式進行編碼 (這可能需要較長時間)...")
             final_video.write_videofile(out_path, fps=FPS, codec="libx264", audio_codec="aac", logger="bar")
         
-        audio_clip.close()
+        # 7. 釋放記憶體與關閉所有檔案控制代碼，避免 WinError 6 錯誤
+        print(f"  🧹 正在清理暫存資源...")
+        
+        # 關閉最終組合影片
         final_video.close()
+        
+        # 逐一關閉所有加入組合的片段 (包含字幕、頭像、背景)
+        for clip in final_clips:
+            try:
+                clip.close()
+            except:
+                pass
+        
+        # 關閉額外開啟的檔案
+        if bgm_clip:
+            try: bgm_clip.close()
+            except: pass
+        if bg_video:
+            try: bg_video.close()
+            except: pass
+        
+        # 關閉原始音檔
+        audio_clip.close()
+        
+        # 如果有 concatenated 的背景，也嘗試釋放其內部的 clips
+        if 'bg_clip' in locals() and bg_clip:
+            try: bg_clip.close()
+            except: pass
+        
+        # 強制進行垃圾回收，幫助 Windows 釋放 Handle
+        import gc
+        gc.collect()
         
     print("\n🎉 所有影片合成暨字幕壓製完畢！")
 
