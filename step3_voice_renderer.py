@@ -37,8 +37,9 @@ RVC_INDEX_PATH    = ""   # 如果有 .index 檔案可以設定絕對路徑，沒
 RVC_F0_UP_KEY     = "2"  # 調整：提高 2 以增加活潑感 (原為 1)
 
 # --- 路徑設定 ---
-SCRIPTS_DIR = "output_scripts"
-VOICES_DIR  = "output_voices"
+import config
+SCRIPTS_DIR = config.OUTPUT_SCRIPTS
+VOICES_DIR  = config.OUTPUT_VOICES
 
 
 # ============================================================

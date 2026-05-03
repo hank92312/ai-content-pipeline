@@ -1,3 +1,4 @@
+import config
 import sqlite3
 import requests
 from bs4 import BeautifulSoup
@@ -61,7 +62,7 @@ category = "Gaming" if cat_choice == '2' else "Finance"
 
 # 5. 寫入共用的資料庫
 today = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-conn = sqlite3.connect('auto_channel.db')
+conn = sqlite3.connect(config.DB_PATH)
 cursor = conn.cursor()
 
 try:

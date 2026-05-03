@@ -6,15 +6,15 @@ import requests
 import re
 import json
 from bs4 import BeautifulSoup
+import config
 from google import genai
 from google.genai import types
 import calendar
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-# ⚠️ 請將下一行的字串替換為您全新申請的真實金鑰！
-API_KEY = "AIzaSyAQD2UcDDAe5b3c9vToTM2pAl99hIKYA7M" 
-client = genai.Client(api_key=API_KEY)
+# 1. 初始化最新的 Gemini API
+client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 # 1. 資料庫連線與初始化
 conn = sqlite3.connect('auto_channel.db')
@@ -30,11 +30,20 @@ cursor.execute('''
         pub_date TEXT,
         is_processed INTEGER DEFAULT 0,
         is_selected INTEGER DEFAULT 0,
+        is_published INTEGER DEFAULT 0,
         image_url TEXT,
         content TEXT
     )
 ''')
 conn.commit()
+
+# [自動化小機關]：檢查並新增 is_published 欄位
+try:
+    cursor.execute("ALTER TABLE DailyNews ADD COLUMN is_published INTEGER DEFAULT 0")
+    conn.commit()
+    print("🔧 資料庫已升級：新增 is_published 欄位。")
+except sqlite3.OperationalError:
+    pass
 
 # [自動化小機關]：檢查並新增 image_url 欄位 (支援模組五產圖)
 try:

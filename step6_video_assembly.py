@@ -3,6 +3,7 @@ import glob
 import sys
 import json
 import numpy as np
+import config
 from PIL import Image, ImageDraw, ImageFont
 
 # 修正 Windows 終端機印出 Emoji 的編碼問題
@@ -23,27 +24,32 @@ except ImportError:
     sys.exit(1)
 
 # --- 路徑與相關設定 ---
-VOICES_DIR  = "output_voices"
-IMAGES_DIR  = "output_images"
-VIDEOS_DIR  = "output_videos"
-SCRIPTS_DIR = "output_scripts"
-AVATAR_PATH = "sample.png"
+VOICES_DIR  = config.OUTPUT_VOICES
+IMAGES_DIR  = config.OUTPUT_IMAGES
+VIDEOS_DIR  = config.OUTPUT_VIDEOS
+SCRIPTS_DIR = config.OUTPUT_SCRIPTS
+AVATAR_PATH = config.ASSETS_DIR + "/sample.png"
+if not os.path.exists(AVATAR_PATH):
+    AVATAR_PATH = "sample.png" # Fallback to root if not in assets
 FONT_PATH   = "C:\\Windows\\Fonts\\msjhbd.ttc"  # 微軟正黑體粗體
 
 TARGET_RESOLUTION = (1080, 1920)  # 直式短影音 9:16
 FPS = 24  # 預設幀率
 
-def extract_image_index(filepath: str) -> int:
-    """處理像 script_Finance_6_0.jpg 這樣的檔名，抽取出後面的數字，以作為排序基準"""
+def extract_file_index(filepath: str) -> int:
+    """處理像 script_Finance_6_0.jpg 或 ID6_1.mp4 這樣的檔名，抽取出後面的數字，以作為排序基準"""
     basename = os.path.basename(filepath)
     name_no_ext = os.path.splitext(basename)[0]
     try:
-        idx_str = name_no_ext.split("_")[-1]
-        return int(idx_str)
+        # 尋找最後一個底線後的數字
+        parts = name_no_ext.split("_")
+        if len(parts) > 1:
+            return int(parts[-1])
+        return 0
     except ValueError:
         return 0
 
-def create_subtitle_clip(text, keywords, duration, font_path=FONT_PATH, font_size=65, stroke_width=5):
+def create_subtitle_clip(text, keywords, duration, font_path=FONT_PATH, font_size=58, stroke_width=5):
     """
     使用 Pillow 動態繪製每一句短影音字幕。
     支援多色高亮 (關鍵字: 黃色, 驚嘆號: 紅色)，並回傳透明背景的 MoviePy ImageClip。
@@ -54,7 +60,7 @@ def create_subtitle_clip(text, keywords, duration, font_path=FONT_PATH, font_siz
         print(f"⚠️ 找不到字體 {font_path}，請確保 Windows 系統含有此字體。")
         font = ImageFont.load_default()
 
-    img = Image.new("RGBA", (1080, 400), (0, 0, 0, 0))
+    img = Image.new("RGBA", (1080, 600), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
     colors = ["white"] * len(text)
@@ -205,7 +211,7 @@ def main():
                 print("     跳過這個腳本...")
                 continue
                 
-            img_paths = sorted(img_paths, key=extract_image_index)
+            img_paths = sorted(img_paths, key=extract_file_index)
             time_per_image = audio_duration / len(img_paths)
             print(f"  🖼 找到 {len(img_paths)} 張背景圖，每張圖將顯示 {time_per_image:.1f} 秒...")
             
@@ -236,31 +242,46 @@ def main():
                 continue
             news_id = m.group(1)
             
-            asset_mp4 = os.path.join("assets", f"ID{news_id}.mp4")
             asset_mp3 = os.path.join("assets", f"ID{news_id}.mp3")
             
-            # 尋找圖片序列 (優先找 ID{news_id}_*.jpg，再找單張 ID{news_id}.jpg)
+            # --- 搜尋影片素材 ---
+            asset_video_paths = []
+            for ext in [".mp4", ".mov", ".mkv", ".avi"]:
+                # 找序號影片 ID6_1.mp4, ID6_2.mp4...
+                pattern = os.path.join("assets", f"ID{news_id}_*{ext}")
+                asset_video_paths.extend(glob.glob(pattern))
+            
+            if not asset_video_paths:
+                # 沒找到序號影片，改找單張 ID6.mp4
+                for ext in [".mp4", ".mov", ".mkv", ".avi"]:
+                    test_path = os.path.join("assets", f"ID{news_id}{ext}")
+                    if os.path.exists(test_path):
+                        asset_video_paths = [test_path]
+                        break
+            
+            asset_video_paths = sorted(asset_video_paths, key=extract_file_index)
+
+            # --- 搜尋圖片素材 ---
             asset_img_paths = []
             for ext in [".jpg", ".jpeg", ".png", ".webp"]:
                 pattern = os.path.join("assets", f"ID{news_id}_*{ext}")
                 asset_img_paths.extend(glob.glob(pattern))
             
             if not asset_img_paths:
-                # 沒找到序號圖片，改找單張
                 for ext in [".jpg", ".jpeg", ".png", ".webp"]:
                     test_path = os.path.join("assets", f"ID{news_id}{ext}")
                     if os.path.exists(test_path):
                         asset_img_paths = [test_path]
                         break
             
-            asset_img_paths = sorted(asset_img_paths, key=extract_image_index)
+            asset_img_paths = sorted(asset_img_paths, key=extract_file_index)
             
-            # 檢查是否至少有圖片素材
-            if not asset_img_paths:
-                print(f"  ❌ 找不到 assets 相關圖片素材 (ID{news_id}.* 或 ID{news_id}_*.jpg)，跳過...")
+            # 檢查是否有任何影像素材 (影片或圖片)
+            if not asset_video_paths and not asset_img_paths:
+                print(f"  ❌ 找不到 assets 相關影像素材 (ID{news_id}.*), 跳過...")
                 continue
                 
-            print(f"  🎨 使用素材模式處理影片：ID{news_id} (找到 {len(asset_img_paths)} 張圖片)")
+            print(f"  🎨 使用素材模式處理影片：ID{news_id} (找到 {len(asset_video_paths)} 個影片, {len(asset_img_paths)} 張圖片)")
             
             # 準備音訊 (BGM 是選配)
             if os.path.exists(asset_mp3):
@@ -272,30 +293,48 @@ def main():
             else:
                 final_audio = audio_clip
 
-            # 準備影像
-            if len(asset_img_paths) > 1:
-                # 多張圖模式：圖片平均分配時間
-                time_per_image = audio_duration / len(asset_img_paths)
-                image_clips = []
-                for i, img_path in enumerate(asset_img_paths):
-                    clip = (ImageClip(img_path)
-                            .with_duration(time_per_image)
-                            .resized(TARGET_RESOLUTION))
-                    if i > 0:
-                        clip = clip.with_effects([vfx.CrossFadeIn(1.0)])
-                    image_clips.append(clip)
-                bg_clip = concatenate_videoclips(image_clips, padding=-1.0, method="compose")
+            # --- 準備影像底圖 ---
+            if asset_video_paths:
+                video_clips = []
+                for v_p in asset_video_paths:
+                    try:
+                        vc = VideoFileClip(v_p).without_audio().resized(TARGET_RESOLUTION)
+                        video_clips.append(vc)
+                    except Exception as e:
+                        print(f"  ⚠️ 無法讀取影片 {v_p}: {e}")
+                
+                if video_clips:
+                    # 串接所有影片
+                    combined_video = concatenate_videoclips(video_clips, method="compose")
+                    
+                    if len(asset_img_paths) > 0:
+                        # 有影片 + 有圖片 => 影片播到最後5秒接圖片
+                        loop_dur = max(0, audio_duration - 5)
+                        bg_video_looped = combined_video.with_effects([vfx.Loop(duration=loop_dur)])
+                        bg_img = ImageClip(asset_img_paths[0]).with_duration(5).resized(TARGET_RESOLUTION).with_effects([vfx.CrossFadeIn(1.0)])
+                        bg_clip = concatenate_videoclips([bg_video_looped, bg_img], padding=-1.0, method="compose")
+                    else:
+                        # 只有影片 => 直接 Loop 到滿
+                        bg_clip = combined_video.with_effects([vfx.Loop(duration=audio_duration)])
+                else:
+                    # 如果讀取失敗回退到純圖片
+                    bg_clip = None
             else:
-                # 單張圖模式：如果有影片就用「影片+5秒圖片」，沒影片就純圖片
-                if os.path.exists(asset_mp4):
-                    bg_video = VideoFileClip(asset_mp4).without_audio()
-                    loop_dur = max(0, audio_duration - 5)
-                    bg_video_looped = bg_video.with_effects([vfx.Loop(duration=loop_dur)]).resized(TARGET_RESOLUTION)
-                    bg_img = ImageClip(asset_img_paths[0]).with_duration(5).resized(TARGET_RESOLUTION).with_effects([vfx.CrossFadeIn(1.0)])
-                    bg_clip = concatenate_videoclips([bg_video_looped, bg_img], padding=-1.0, method="compose")
+                bg_clip = None
+
+            # 如果沒影片或讀取失敗，使用圖片
+            if bg_clip is None and asset_img_paths:
+                if len(asset_img_paths) > 1:
+                    time_per_image = audio_duration / len(asset_img_paths)
+                    image_clips = []
+                    for i, img_path in enumerate(asset_img_paths):
+                        clip = ImageClip(img_path).with_duration(time_per_image).resized(TARGET_RESOLUTION)
+                        if i > 0: clip = clip.with_effects([vfx.CrossFadeIn(1.0)])
+                        image_clips.append(clip)
+                    bg_clip = concatenate_videoclips(image_clips, padding=-1.0, method="compose")
                 else:
                     bg_clip = ImageClip(asset_img_paths[0]).with_duration(audio_duration).resized(TARGET_RESOLUTION)
-            
+
             bg_clip = bg_clip.with_audio(final_audio)
             final_clips = [bg_clip]
 
@@ -305,19 +344,37 @@ def main():
             
             print(f"  🎨 使用客製化模式處理影片：{basename}")
             
-            bg_video_clip = None
+            # --- 搜尋影片素材 ---
+            asset_video_paths = []
             if custom_video == 1 and news_id:
-                asset_mp4 = os.path.join("assets", f"ID{news_id}.mp4")
-                if os.path.exists(asset_mp4):
-                    bg_video = VideoFileClip(asset_mp4).without_audio()
-                    bg_video_clip = bg_video.resized(TARGET_RESOLUTION)
-                else:
-                    print(f"  ⚠️ 無法找到素材影片 {asset_mp4}")
+                for ext in [".mp4", ".mov", ".mkv", ".avi"]:
+                    pattern = os.path.join("assets", f"ID{news_id}_*{ext}")
+                    asset_video_paths.extend(glob.glob(pattern))
+                
+                if not asset_video_paths:
+                    for ext in [".mp4", ".mov", ".mkv", ".avi"]:
+                        test_path = os.path.join("assets", f"ID{news_id}{ext}")
+                        if os.path.exists(test_path):
+                            asset_video_paths = [test_path]
+                            break
+                
+                asset_video_paths = sorted(asset_video_paths, key=extract_file_index)
             
+            # --- 準備影片底圖 ---
+            bg_video_clip = None
+            if asset_video_paths:
+                video_clips = []
+                for v_p in asset_video_paths:
+                    try:
+                        vc = VideoFileClip(v_p).without_audio().resized(TARGET_RESOLUTION)
+                        video_clips.append(vc)
+                    except: pass
+                if video_clips:
+                    bg_video_clip = concatenate_videoclips(video_clips, method="compose")
+
             # --- 準備圖片序列 ---
             img_clip_list = []
             if custom_image == 1 and news_id:
-                # 搜尋素材資料夾中的圖片序列
                 asset_img_paths = []
                 for ext in [".jpg", ".jpeg", ".png", ".webp"]:
                     pattern = os.path.join("assets", f"ID{news_id}_*{ext}")
@@ -331,14 +388,12 @@ def main():
                             break
                 
                 if asset_img_paths:
-                    img_clip_list = sorted(asset_img_paths, key=extract_image_index)
-                else:
-                    print(f"  ⚠️ 無法找到素材圖片 ID{news_id}.* 或 ID{news_id}_*.jpg")
+                    img_clip_list = sorted(asset_img_paths, key=extract_file_index)
             elif custom_image == 2:
                 pattern = os.path.join(IMAGES_DIR, f"{basename}_*.jpg")
                 mod_imgs = glob.glob(pattern)
                 if mod_imgs:
-                    img_clip_list = sorted(mod_imgs, key=extract_image_index)
+                    img_clip_list = sorted(mod_imgs, key=extract_file_index)
                 else:
                     print(f"  ⚠️ 無法找到模組生成圖片 {pattern}")
                     
@@ -430,7 +485,7 @@ def main():
                 txt_clip = create_subtitle_clip(text, keywords, duration)
                 txt_clip = (txt_clip
                             .with_start(start_t)
-                            .with_position(("center", 1400))) 
+                            .with_position(("center", 1350))) 
                 final_clips.append(txt_clip)
             
         # 6. 生成最終合成並輸出
@@ -443,7 +498,7 @@ def main():
         # 1. 優先嘗試 AMD GPU 硬體加速 (AMF)
         try:
             print("  ⚡ 嘗試使用 AMD GPU 硬體加速編碼 (AMF)...")
-            final_video.write_videofile(out_path, fps=FPS, codec="h264_amf", audio_codec="aac", logger="bar")
+            final_video.write_videofile(out_path, fps=FPS, codec="h264_amf", audio_codec="aac", preset="balanced", logger="bar")
             success = True
         except Exception:
             print("  ⚠️ AMD AMF 不支援，嘗試下一項...")

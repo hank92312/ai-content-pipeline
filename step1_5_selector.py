@@ -1,10 +1,11 @@
+import config
 import sqlite3
 import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
 
 # 1. 連線資料庫
-conn = sqlite3.connect('auto_channel.db')
+conn = sqlite3.connect(config.DB_PATH)
 cursor = conn.cursor()
 
 # [自動化小機關]：檢查並新增 is_selected 欄位 (如果還沒有的話)

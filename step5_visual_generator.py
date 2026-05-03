@@ -4,6 +4,7 @@ import glob
 import requests
 import io
 import sys
+import config
 from PIL import Image
 from google import genai
 
@@ -14,9 +15,7 @@ print("  🖼️ AI 視覺生圖中心 ")
 print("=============================")
 
 # 1. 初始化 Gemini API
-# ⚠️ 請將下一行的字串替換為您在 step2 使用的金鑰
-API_KEY = "AIzaSyAQD2UcDDAe5b3c9vToTM2pAl99hIKYA7M" 
-client = genai.Client(api_key=API_KEY)
+client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 # --- 頻道風格提示詞 (可隨時調整) ---
 # 控制了產圖的格式 (9:16) 與整體畫風。必須強制二次元/科技感風格，避免生成真實照片。
