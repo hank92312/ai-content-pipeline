@@ -21,7 +21,7 @@ cursor = conn.cursor()
 
 # 3. 撈取「已選定 (is_selected = 1)」且「未處理 (is_processed = 0)」的新聞
 # 加入 IFNULL 為了相容之前的資料，若沒圖片就給空字串
-cursor.execute("SELECT id, category, title, IFNULL(image_url, ''), IFNULL(content, '') FROM DailyNews WHERE is_processed = 0 AND is_selected = 1")
+cursor.execute("SELECT id, category, title, IFNULL(image_url, ''), IFNULL(content, ''), IFNULL(link, '') FROM DailyNews WHERE is_processed = 0 AND is_selected = 1")
 selected_news = cursor.fetchall()
 
 if not selected_news:
@@ -52,7 +52,7 @@ if is_pro_mode:
 
 # 4. 針對「每一則」新聞自動生成對應的腳本
 for news in selected_news:
-    db_id, category, title, image_url, content = news
+    db_id, category, title, image_url, content, link = news
     print(f"\n🎬 正在產製 [{category}] 類別的影片腳本 (新聞ID: {db_id})...")
     
     tone = "專業、充滿自信且帶有一點懸疑感" if category == "Finance" else "熱情、激動、像個資深玩家"
@@ -135,7 +135,7 @@ for news in selected_news:
             
         # 儲存腳本中繼檔 (.json) (給生圖模組使用)
         json_path = f"output_scripts/{base_filename}.json"
-        script_data["news_sources"] = [{"id": db_id, "title": title, "image_url": image_url}]
+        script_data["news_sources"] = [{"id": db_id, "title": title, "image_url": image_url, "url": link}]
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(script_data, f, ensure_ascii=False, indent=4)
             
