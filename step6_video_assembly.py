@@ -285,10 +285,16 @@ def main():
             
             # 準備音訊 (BGM 是選配)
             if os.path.exists(asset_mp3):
-                bgm_clip = AudioFileClip(asset_mp3).with_effects([
-                    afx.AudioLoop(duration=audio_duration),
-                    afx.MultiplyVolume(0.12)
-                ])
+                bgm_clip = AudioFileClip(asset_mp3)
+                if bgm_clip.duration is not None and bgm_clip.duration < audio_duration:
+                    bgm_clip = bgm_clip.with_effects([
+                        afx.AudioLoop(duration=audio_duration),
+                        afx.MultiplyVolume(config.BGM_VOLUME)
+                    ])
+                else:
+                    bgm_clip = bgm_clip.with_duration(audio_duration).with_effects([
+                        afx.MultiplyVolume(config.BGM_VOLUME)
+                    ])
                 final_audio = CompositeAudioClip([bgm_clip, audio_clip]).with_duration(audio_duration)
             else:
                 final_audio = audio_clip
@@ -433,10 +439,16 @@ def main():
             if custom_music == 1 and news_id:
                 asset_mp3 = os.path.join("assets", f"ID{news_id}.mp3")
                 if os.path.exists(asset_mp3):
-                    bgm_clip = AudioFileClip(asset_mp3).with_effects([
-                        afx.AudioLoop(duration=audio_duration),
-                        afx.MultiplyVolume(0.12)
-                    ])
+                    bgm_clip = AudioFileClip(asset_mp3)
+                    if bgm_clip.duration is not None and bgm_clip.duration < audio_duration:
+                        bgm_clip = bgm_clip.with_effects([
+                            afx.AudioLoop(duration=audio_duration),
+                            afx.MultiplyVolume(config.BGM_VOLUME)
+                        ])
+                    else:
+                        bgm_clip = bgm_clip.with_duration(audio_duration).with_effects([
+                            afx.MultiplyVolume(config.BGM_VOLUME)
+                        ])
                     final_audio = CompositeAudioClip([bgm_clip, audio_clip]).with_duration(audio_duration)
                 else:
                     print(f"  ⚠️ 無法找到素材音樂 {asset_mp3}")

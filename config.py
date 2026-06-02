@@ -33,6 +33,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # --- 全域參數 ---
 TTS_SPEED = "+25%"  # 語速加快 25%
 GEMINI_MODEL = "gemini-2.5-flash"
+BGM_VOLUME = 0.08  # 背景音樂音量比例 (預設 0.04，避免壓過口播)
+
 
 # 確保所有輸出目錄都存在
 for path in [OUTPUT_VIDEOS, OUTPUT_SCRIPTS, OUTPUT_VOICES, OUTPUT_IMAGES, ASSETS_DIR, ARCHIVE_DIR, DEBUG_LOGS_DIR, COMPLETED_ARCHIVE_DIR]:

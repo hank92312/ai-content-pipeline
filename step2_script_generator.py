@@ -41,13 +41,26 @@ if is_pro_mode:
     print("[1] gemini-2.5-pro (穩定高階)")
     print("[2] gemini-3-flash (新一代快速)")
     print("[3] gemini-3.1-pro (最新一代高階)")
-    model_choice = input("請輸入選項 (1, 2 或 3，預設為 1): ").strip()
+    print("[4] gemini-3.5-flash (最新旗艦級效率模型)")
+    model_choice = input("請輸入選項 (1, 2, 3 或 4，預設為 1): ").strip()
     if model_choice == "2":
         target_model = 'gemini-3-flash-preview'
     elif model_choice == "3":
         target_model = 'gemini-3.1-pro-preview'
+    elif model_choice == "4":
+        target_model = 'gemini-3.5-flash'
     else:
         target_model = 'gemini-2.5-pro'
+    print(f"\n=> 已選擇模型：{target_model}")
+else:
+    print("\n請選擇標準模式要使用的模型：")
+    print("[1] gemini-3-flash (即 3.1 Flash, 預設)")
+    print("[2] gemini-3.5-flash (最新旗艦級效率模型)")
+    model_choice = input("請輸入選項 (1 或 2，預設為 1): ").strip()
+    if model_choice == "2":
+        target_model = 'gemini-3.5-flash'
+    else:
+        target_model = 'gemini-3-flash-preview'
     print(f"\n=> 已選擇模型：{target_model}")
 
 # 4. 針對「每一則」新聞自動生成對應的腳本
