@@ -4,7 +4,10 @@ import shutil
 import datetime
 import re
 import requests
+import sys
 import config
+
+sys.stdout.reconfigure(encoding='utf-8')
 
 print("=============================")
 print("  Batch Local News Loader  ")
@@ -23,14 +26,16 @@ for path in [SOURCE_DIR, IMPORTED_DIR, LOCAL_IMAGE_DIR]:
 conn = sqlite3.connect(config.DB_PATH)
 cursor = conn.cursor()
 
-# 掃描 source 資料夾下的 .txt 檔案
-txt_files = [f for f in os.listdir(SOURCE_DIR) if f.endswith('.txt') and os.path.isfile(os.path.join(SOURCE_DIR, f))]
+# 掃描 source 資料夾下的支援檔案 (.txt, .md, .pdf)
+SUPPORTED_EXTENSIONS = ('.txt', '.md', '.pdf')
+input_files = [f for f in os.listdir(SOURCE_DIR) if f.lower().endswith(SUPPORTED_EXTENSIONS) and os.path.isfile(os.path.join(SOURCE_DIR, f))]
 
-if not txt_files:
-    print(f"INFO: Currently '{SOURCE_DIR}' has no .txt files.")
+if not input_files:
+    print(f"INFO: Currently '{SOURCE_DIR}' has no support files ({', '.join(SUPPORTED_EXTENSIONS)}).")
     exit()
 
-print(f"Scanning: Found {len(txt_files)} files...\n")
+print(f"Scanning: Found {len(input_files)} files...\n")
+
 
 def get_category_choice(title):
     print(f"\n[Title]: {title}")
@@ -68,16 +73,32 @@ def download_image(url, save_filename):
 
 import_count = 0
 
-for filename in txt_files:
+for filename in input_files:
     file_path = os.path.join(SOURCE_DIR, filename)
     title = os.path.splitext(filename)[0]
+    ext = os.path.splitext(filename)[1].lower()
     
     # 讀取內容
-    with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read().strip()
+    content = ""
+    if ext in ('.txt', '.md'):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+    elif ext == '.pdf':
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(file_path)
+            pages_text = []
+            for page in reader.pages:
+                text = page.extract_text()
+                if text:
+                    pages_text.append(text)
+            content = "\n".join(pages_text).strip()
+        except Exception as e:
+            print(f"⚠️ 讀取 PDF 失敗: {filename}, 錯誤: {e}")
+            continue
     
     if not content:
-        print(f"⚠️ 跳過空檔案: {filename}")
+        print(f"⚠️ 跳過空內容檔案: {filename}")
         continue
     
     # a. 選取分類
