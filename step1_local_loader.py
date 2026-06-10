@@ -73,6 +73,8 @@ def download_image(url, save_filename):
     return None
 
 import_count = 0
+json_import_count = 0
+other_import_count = 0
 
 for filename in input_files:
     file_path = os.path.join(SOURCE_DIR, filename)
@@ -205,6 +207,10 @@ for filename in input_files:
             shutil.move(local_img, os.path.join(IMPORTED_DIR, os.path.basename(local_img)))
             
         import_count += 1
+        if ext == '.json':
+            json_import_count += 1
+        else:
+            other_import_count += 1
     except sqlite3.IntegrityError:
         print(f"ERROR: '{filename}' already imported.")
         # 即使重複，也協助搬移至 imported 以免卡住 source 資料夾
@@ -215,25 +221,15 @@ for filename in input_files:
 conn.commit()
 conn.close()
 
-print(f"\nFINISH: Imported {import_count} local news files.")
+print(f"\nFINISH: Imported {import_count} local news files. (JSON: {json_import_count}, Others: {other_import_count})")
 
-# 自動接續執行 1.5 模組
 import subprocess
 import sys
-print("\n👉 自動接續執行 1.5 挑選模組...")
-subprocess.run([sys.executable, 'step1_5_selector.py'])
 
-# 詢問是否執行模組2
-ans2 = input("\n❓ 1.5 模組挑選完畢。是否繼續執行 [模組2: AI產生腳本]？ (y/n，輸入 q 退出): ").strip().lower()
-if ans2 == 'q':
-    print("🚪 中途退出。")
-    sys.exit(0)
-elif ans2 in ['y', 'yes']:
-    print("\n👉 接續執行模組 2...")
-    subprocess.run([sys.executable, 'step2_script_generator.py'])
-    
-    # 執行完模組2後，詢問是否執行模組3
-    ans3 = input("\n❓ 模組 2 執行完畢。是否繼續執行 [模組3: 語音合成]？ (y/n，輸入 q 退出): ").strip().lower()
+# 如果本次只有匯入 JSON，直接詢問是否進行語音合成 (模組3)
+if other_import_count == 0 and json_import_count > 0:
+    print("\n💡 本次僅匯入已具備腳本的 JSON 檔案，將自動跳過「總編輯選題 (1.5)」與「AI 劇本生成 (2)」步驟。")
+    ans3 = input("\n❓ 是否直接執行 [模組3: 語音合成]？ (y/n，輸入 q 退出): ").strip().lower()
     if ans3 == 'q':
         print("🚪 中途退出。")
         sys.exit(0)
@@ -244,4 +240,27 @@ elif ans2 in ['y', 'yes']:
     else:
         print("⏸️ 結束執行。")
 else:
-    print("⏸️ 結束執行。")
+    # 正常流程 (包含非 JSON 檔案的選題與生腳本)
+    print("\n👉 自動接續執行 1.5 挑選模組...")
+    subprocess.run([sys.executable, 'step1_5_selector.py'])
+
+    ans2 = input("\n❓ 1.5 模組挑選完畢。是否繼續執行 [模組2: AI產生腳本]？ (y/n，輸入 q 退出): ").strip().lower()
+    if ans2 == 'q':
+        print("🚪 中途退出。")
+        sys.exit(0)
+    elif ans2 in ['y', 'yes']:
+        print("\n👉 接續執行模組 2...")
+        subprocess.run([sys.executable, 'step2_script_generator.py'])
+        
+        ans3 = input("\n❓ 模組 2 執行完畢。是否繼續執行 [模組3: 語音合成]？ (y/n，輸入 q 退出): ").strip().lower()
+        if ans3 == 'q':
+            print("🚪 中途退出。")
+            sys.exit(0)
+        elif ans3 in ['y', 'yes']:
+            print("\n👉 接續執行模組 3...")
+            subprocess.run([sys.executable, 'step3_voice_renderer.py'])
+            print("\n✅ 所有選定之模組皆執行完畢。")
+        else:
+            print("⏸️ 結束執行。")
+    else:
+        print("⏸️ 結束執行。")
