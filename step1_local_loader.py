@@ -6,6 +6,7 @@ import re
 import requests
 import sys
 import config
+import json
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -26,8 +27,8 @@ for path in [SOURCE_DIR, IMPORTED_DIR, LOCAL_IMAGE_DIR]:
 conn = sqlite3.connect(config.DB_PATH)
 cursor = conn.cursor()
 
-# 掃描 source 資料夾下的支援檔案 (.txt, .md, .pdf)
-SUPPORTED_EXTENSIONS = ('.txt', '.md', '.pdf')
+# 掃描 source 資料夾下的支援檔案 (.txt, .md, .pdf, .json)
+SUPPORTED_EXTENSIONS = ('.txt', '.md', '.pdf', '.json')
 input_files = [f for f in os.listdir(SOURCE_DIR) if f.lower().endswith(SUPPORTED_EXTENSIONS) and os.path.isfile(os.path.join(SOURCE_DIR, f))]
 
 if not input_files:
@@ -80,6 +81,10 @@ for filename in input_files:
     
     # 讀取內容
     content = ""
+    json_data = None
+    link_in_json = ""
+    image_url_in_db = ""
+    
     if ext in ('.txt', '.md'):
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read().strip()
@@ -96,6 +101,36 @@ for filename in input_files:
         except Exception as e:
             print(f"⚠️ 讀取 PDF 失敗: {filename}, 錯誤: {e}")
             continue
+    elif ext == '.json':
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                json_data = json.load(f)
+            
+            # 檢查是否為專案規格 JSON (包含 intro, main_content, outro, visual_prompts, keywords)
+            required_keys = ('intro', 'main_content', 'outro', 'visual_prompts', 'keywords')
+            if not all(k in json_data for k in required_keys):
+                print(f"⚠️ JSON 結構不符合專案規格: {filename}")
+                continue
+                
+            # 將腳本內容組合成 content
+            content = f"{json_data['intro']}\n{json_data['main_content']}\n{json_data['outro']}"
+            
+            # 從 json 取得標題、網址與圖片
+            news_sources = json_data.get("news_sources", [])
+            if news_sources and isinstance(news_sources, list) and len(news_sources) > 0:
+                source_item = news_sources[0]
+                if source_item.get("title"):
+                    title = source_item["title"]
+                if source_item.get("url"):
+                    link_in_json = source_item["url"]
+                if source_item.get("image_url"):
+                    image_url_in_db = source_item["image_url"]
+            
+            if not link_in_json:
+                link_in_json = f"local://{filename}"
+        except Exception as e:
+            print(f"⚠️ 讀取 JSON 失敗: {filename}, 錯誤: {e}")
+            continue
     
     if not content:
         print(f"⚠️ 跳過空內容檔案: {filename}")
@@ -105,19 +140,20 @@ for filename in input_files:
     category = get_category_choice(title)
     
     # b. 處理圖片
-    image_url_in_db = ""
-    
-    # 優先權 1: 同名本地檔案
+    # 優先權 1: 同名本地檔案 (使用 img_ext 以防覆蓋 ext 變數)
     local_img = find_local_image(title)
     if local_img:
-        ext = os.path.splitext(local_img)[1]
-        target_img_name = f"{title}{ext}"
+        img_ext = os.path.splitext(local_img)[1]
+        target_img_name = f"{title}{img_ext}"
         target_img_path = os.path.join(LOCAL_IMAGE_DIR, target_img_name)
         shutil.copy2(local_img, target_img_path)
         image_url_in_db = target_img_path
         print(f"   IMAGE: Found local image: {target_img_name}")
+    elif ext == '.json' and image_url_in_db:
+        # 優先權 2: JSON 內附的圖片 URL/路徑
+        print(f"   IMAGE: Using image_url from JSON: {image_url_in_db}")
     else:
-        # 優先權 2: 掃描內嵌網址
+        # 優先權 3: 掃描內嵌網址
         urls = extract_image_urls(content)
         if urls:
             print(f"   LINK: Detected image URL, downloading...")
@@ -127,16 +163,42 @@ for filename in input_files:
                 print(f"   SUCCESS: Image downloaded")
     
     # c. 寫入資料庫
-    unique_link = f"local://{filename}"
+    unique_link = link_in_json if (ext == '.json' and link_in_json) else f"local://{filename}"
     today = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     try:
+        is_processed_val = 1 if ext == '.json' else 0
         cursor.execute('''
-            INSERT INTO DailyNews (category, title, link, pub_date, image_url, content)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (category, title, unique_link, today, image_url_in_db, content))
-        print(f"SUCCESS: Imported to DB [ID: {cursor.lastrowid}]")
+            INSERT INTO DailyNews (category, title, link, pub_date, image_url, content, is_processed)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (category, title, unique_link, today, image_url_in_db, content, is_processed_val))
+        db_id = cursor.lastrowid
+        print(f"SUCCESS: Imported to DB [ID: {db_id}]")
         
+        if ext == '.json':
+            # 我們需要為這個已處理的 JSON 檔案在 output_scripts 目錄下生成 script_{category}_{db_id}.txt 和 script_{category}_{db_id}.json
+            os.makedirs(config.OUTPUT_SCRIPTS, exist_ok=True)
+            base_filename = f"script_{category}_{db_id}"
+            
+            # 組合最終腳本
+            final_script = f"{json_data['intro']} {json_data['main_content']} {json_data['outro']}"
+            
+            # 儲存腳本文字檔 (給語音模組使用)
+            txt_path = os.path.join(config.OUTPUT_SCRIPTS, f"{base_filename}.txt")
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write(final_script)
+                
+            # 儲存腳本中繼檔 (.json) (給生圖模組使用)
+            json_path = os.path.join(config.OUTPUT_SCRIPTS, f"{base_filename}.json")
+            # 修正 news_sources 為正確的 db_id 資訊
+            json_data["news_sources"] = [{"id": db_id, "title": title, "image_url": image_url_in_db, "url": unique_link}]
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(json_data, f, ensure_ascii=False, indent=4)
+                
+            print(f"   [JSON LOAD] Generated script files for subsequent modules:")
+            print(f"     -> {txt_path}")
+            print(f"     -> {json_path}")
+            
         # d. 搬移至 imported (歸檔)
         shutil.move(file_path, os.path.join(IMPORTED_DIR, filename))
         if local_img:
