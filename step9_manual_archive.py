@@ -101,8 +101,8 @@ def main():
         except Exception as e:
             print(f"   ⚠️ 影片搬移失敗: {e}")
 
-        # B. 搬移素材檔案 (json, txt, wav, jpg, mp4, mp3...)
-        # 先收集固定名稱的檔案
+        # B. 搬移素材檔案 (json, txt, wav...)
+        # 1. 搬移腳本與配音檔案
         assets_to_check = [
             (config.OUTPUT_SCRIPTS, f"{item['basename']}.json"),
             (config.OUTPUT_SCRIPTS, f"{item['basename']}.txt"),
@@ -110,8 +110,6 @@ def main():
             (config.OUTPUT_VOICES, f"{item['basename']}_final.wav"),
             (config.OUTPUT_VOICES, f"{item['basename']}_tts.wav"),
             (config.OUTPUT_VOICES, f"{item['basename']}_subs.json"),
-            (config.OUTPUT_IMAGES, f"{item['basename']}_0.jpg"),
-            (config.OUTPUT_IMAGES, f"{item['basename']}_1.jpg"),
         ]
         
         for folder, filename in assets_to_check:
@@ -122,6 +120,18 @@ def main():
                     print(f"   ✅ 已搬移素材: {filename}")
                 except Exception as e:
                     print(f"   ⚠️ 素材 {filename} 搬移失敗: {e}")
+
+        # 2. 搬移配圖 (使用 glob 搜尋動態張數)
+        import glob
+        image_pattern = os.path.join(config.OUTPUT_IMAGES, f"{item['basename']}_*")
+        matching_images = glob.glob(image_pattern)
+        for img_src in matching_images:
+            img_filename = os.path.basename(img_src)
+            try:
+                shutil.move(img_src, os.path.join(config.COMPLETED_ASSETS_DIR, img_filename))
+                print(f"   ✅ 已搬移配圖素材: {img_filename}")
+            except Exception as e:
+                print(f"   ⚠️ 配圖素材 {img_filename} 搬移失敗: {e}")
 
         # 特別處理 assets/ 資料夾中的所有相關檔案 (IDxx.*, IDxx_*.png 等)
         import glob
@@ -150,10 +160,10 @@ def main():
 
     conn.commit()
     
-    # E. 清理未被選中的新聞標題 (is_selected = 0)
+    # E. 清理未被選中且未處理的舊新聞標題
     print("\n🧹 正在清理資料庫中未被選中的舊新聞標題...")
     try:
-        cursor.execute("DELETE FROM DailyNews WHERE is_selected = 0")
+        cursor.execute("DELETE FROM DailyNews WHERE is_selected = 0 AND is_processed = 0 AND is_published = 0")
         deleted_count = cursor.rowcount
         conn.commit()
         print(f"   ✅ 已成功清除 {deleted_count} 筆未選中的標題，資料庫已重置。")
