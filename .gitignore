@@ -35,5 +35,7 @@ playwright_session/
 # 忽略偵錯與歸檔檔案
 debug_logs/
 completed_archives/
-archive/debug_*.html
-archive/debug_*.png
+archive/
+
+# 忽略內部備份/同步流程文件 (含私人倉庫設定，不對外公開)
+SOP.md

@@ -1,5 +1,0 @@
-Total SVGs: 37
-[35] SVG found! aria-label: 選擇「裁切」
-    Parent Button Classes: ['_aswp', '_aswq', '_aswu', '_asw_', '_asx2']
-
-Elements with 9:16: 0
