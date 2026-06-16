@@ -19,6 +19,10 @@ output_images/
 output_videos/
 testoutput/
 
+# 忽略本地端新聞抓取素材 (僅保留已上傳者作為範例，未來新增不再上傳)
+assets/
+source/
+
 # 忽略 RVC 龐大模型核心 (GitHub 會阻擋超過 100MB 檔案)
 RVC1006AMD_Intel1/
 *.pth
