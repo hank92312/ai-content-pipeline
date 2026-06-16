@@ -1,0 +1,22 @@
+{
+    "intro": "什麼！美伊居然宣布要停火了？！川普還解除海上封鎖，這是在演哪齣？",
+    "main_content": "雙方預計十九號簽協議，伊朗能喘口氣搞經濟，但大魔王以色列根本沒表態！只要伊朗革命衛隊或激進派手癢亂開火，可能一秒破功直接開打！",
+    "outro": "這波世紀大停火你們覺得能撐多久？留言區告訴小花！記得訂閱，AI科技情報不漏接喔！",
+    "visual_prompts": [
+        "2D anime style, visually stunning, Donald Trump and an Iranian leader shaking hands awkwardly in front of battleships moving away from a coastal blockade, high tension, dramatic lighting, No text, no letters, no words",
+        "2D anime style, visually stunning, an angry Israeli soldier silhouette overlooking a glowing map of the Middle East, chaotic sparks and potential conflict fire rising in the background, cinematic, No text, no letters, no words"
+    ],
+    "keywords": [
+        "美伊停火",
+        "解除海上封鎖",
+        "以色列表態"
+    ],
+    "news_sources": [
+        {
+            "id": 103,
+            "title": "伊朗宣布與美國達成協議 各戰線立即停火 專家深度解析後續變數",
+            "image_url": "",
+            "url": "local://news"
+        }
+    ]
+}

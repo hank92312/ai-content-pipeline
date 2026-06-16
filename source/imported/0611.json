@@ -1,0 +1,24 @@
+{
+    "intro": "我的天啊！Anthropic 這次真的不講武德！突然丟出全新 Mythos 級最強 AI 巨獸 Claude Fable 5 還有 Mythos 5，這根本是要把競爭對手逼上絕路啊！",
+    "main_content": "這次發布的 Fable 5 簡直強到像開掛！知名企業 Stripe 實測用它把原本需要一整個團隊做『兩個月』的 5000 萬行程式碼遷移，竟然只花『一天』就搞定，簡直是工程師修仙爆肝的超級救星！而且它還有一手「流暢防爆」神技：如果偵測到高風險網路安全或生化問題，它不會死板拒絕，而是自動降級無縫切換到 Opus 4.8 來安全回答。至於完全解鎖、強到連各國政府都害怕的 Mythos 5，則被嚴格控管只開放給特定安全夥伴，這真的是 AI 界神仙打架的最高境界！",
+    "outro": "兩個月的工作一天做完，這波 AI 進化有沒有嚇到你？你覺得工程師真的要失業了嗎？留言區戰起來！記得訂閱小花，AI 科技情報不漏接喔！",
+    "visual_prompts": [
+        "2D anime style, visually stunning, a quirky girl tech blogger with pink hair and high-tech glasses looking completely mind-blown, pointing at a giant glowing holographic interface displaying complex programming code matrix and cyber shields, neon particles, futuristic workspace background, No text, no letters, no words",
+        "2D anime style, visually stunning, the anime girl cheering with sparkles in her eyes, holding a glowing digital tablet showing an advanced AI core transforming massive cascading technical data into floating streaming light paths, cinematic dynamic lighting, cyberpunk room background, No text, no letters, no words"
+    ],
+    "keywords": [
+        "ClaudeFable5",
+        "Mythos5",
+        "不講武德",
+        "修仙爆肝",
+        "神仙打架"
+    ],
+    "news_sources": [
+        {
+            "id": 99,
+            "title": "Anthropic 推出最強 Mythos 級 AI！Claude Fable 5 與 Mythos 5 聯手登場，性能狂飆讓政府都害怕",
+            "image_url": "",
+            "url": "https://www.soft4fun.net/tech/ai/anthropic-claude-fable-5-mythos-5-release.htm"
+        }
+    ]
+}

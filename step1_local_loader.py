@@ -128,7 +128,7 @@ for filename in input_files:
                 if source_item.get("image_url"):
                     image_url_in_db = source_item["image_url"]
             
-            if not link_in_json:
+            if not link_in_json or link_in_json == "local://news":
                 link_in_json = f"local://{filename}"
         except Exception as e:
             print(f"⚠️ 讀取 JSON 失敗: {filename}, 錯誤: {e}")

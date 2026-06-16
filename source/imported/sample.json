@@ -1,0 +1,24 @@
+{
+    "intro": "做報告做到要寫遺書？救星來了！Google NotebookLM 這次大改版簡直不講武德，直接要把研究生和上班族從地獄超渡回來！",
+    "main_content": "NotebookLM 這次底層直接升級成 Gemini 3.5，還加入黑科技，效能勝率狂飆！以前最討厭 AI 給答案像在通靈，現在它會把「透明思考推理步驟」一條條秀給你，再也不怕它瞎掰。最扯的是，以前整理完資料還要手動做簡報，現在一鍵就能直接幫你匯出成 Excel 和 PPT 簡報檔！小花我覺得，這根本是合法開掛、期末修仙爆肝的終極外掛啊！",
+    "outro": "一鍵生成 PPT 到底會多神？你最想拿它來應付什麼報告？留言區聊起來！記得訂閱小花，AI 科技情報不漏接喔！",
+    "visual_prompts": [
+        "2D anime style, visually stunning, a quirky girl tech blogger with pink hair and smart glasses looking dynamic and excited, pointing at a giant glowing holographic interface showing transparent data flowing and converting into professional PPT and Excel sheet floating icons, electric sparks, futuristic glowing workspace background, No text, no letters, no words",
+        "2D anime style, visually stunning, the anime girl cheering with tears of pure joy, holding a glowing digital notebook, surrounded by floating cascading geometric papers, folders, and graphs dissolving into neon light particles, vibrant cinematic lighting, No text, no letters, no words"
+    ],
+    "keywords": [
+        "NotebookLM",
+        "Gemini3.5",
+        "一鍵生PPT",
+        "不講武德",
+        "修仙爆肝"
+    ],
+    "news_sources": [
+        {
+            "id": 98,
+            "title": "Google NotebookLM 大改版！升級Gemini 3.5 效能提升超有感，還能把研究成果直接轉成PPT 與Excel 檔案",
+            "image_url": "",
+            "url": "https://www.techbang.com/posts/130051-base-model-upgrade-transparent-reasoning"
+        }
+    ]
+}

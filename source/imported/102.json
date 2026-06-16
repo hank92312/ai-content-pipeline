@@ -1,0 +1,22 @@
+{
+    "intro": "科技宅注意！外媒這次用Ｘ光硬核拆解川普的話題新手機，當內部電路佈局一曝光，立刻讓這台機器的底層硬體密碼徹底浮上水面！",
+    "main_content": "拆解報告證實它與HTC U24 Pro結構完全相同，均來自同個代工供應鏈。這代表所謂的美國組裝，本質上就是成熟公模的延伸。",
+    "outro": "面對這種成熟供應鏈的貼牌模式，大家覺得它在市場上的實際實用性如何？歡迎留言理性討論！記得訂閱小花，硬核科技情報不漏接！",
+    "visual_prompts": [
+        "2D anime style, visually stunning, a precise technical X-ray scan of a modern smartphone, showing clean blue illuminated circuit boards and components, tech otaku style, No text, no letters, no words",
+        "2D anime style, visually stunning, a male anime tech enthusiast in a workshop looking thoughtfully at a holographic phone blueprint, analytical atmosphere, No text, no letters, no words"
+    ],
+    "keywords": [
+        "硬核拆解",
+        "硬體密碼",
+        "成熟供應鏈"
+    ],
+    "news_sources": [
+        {
+            "id": 1,
+            "title": "Trump Mobile T1 拆解證實為 HTC U24 Pro 孿生機，美國製造承諾引質疑",
+            "image_url": "",
+            "url": "local://news"
+        }
+    ]
+}
