@@ -10,13 +10,22 @@
 ![Playwright](https://img.shields.io/badge/Playwright-Automation-2EAD33?logo=playwright&logoColor=white)
 ![MoviePy](https://img.shields.io/badge/MoviePy-2.0-FF6F00)
 
+### 📺 實際營運頻道：小花的AI情報站
+
+[![YouTube](https://img.shields.io/badge/YouTube-蔡小花的AI情報站-FF0000?logo=youtube&logoColor=white)](https://www.youtube.com/@%E8%94%A1%E5%B0%8F%E8%8A%B1%E7%9A%84AI%E6%83%85%E5%A0%B1%E7%AB%99)
+[![Instagram](https://img.shields.io/badge/Instagram-@yourflower180-E4405F?logo=instagram&logoColor=white)](https://www.instagram.com/yourflower180/)
+[![Facebook](https://img.shields.io/badge/Facebook-粉絲專頁-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/profile.php?id=61573260607447)
+[![TikTok](https://img.shields.io/badge/TikTok-@hank92312-000000?logo=tiktok&logoColor=white)](https://www.tiktok.com/@hank92312)
+
+> 🎯 本管線產出的短影音，皆實際發布於上述頻道——點擊即可觀看真實成品。
+
 ---
 
 ## 📌 專案簡介
 
 這是一個 **從 0 到 1 獨立開發** 的 AI 內容自動化專案。整條管線拆成 **9 個可獨立執行又能自動接續的模組**，以 **Python + SQLite 狀態機** 為骨幹，把人力集中在「選題」與「發布覆核」兩個判斷點，其餘流程交由程式與 AI 自動完成。
 
-實際營運的頻道：**「小花的AI情報站」**——虛擬角色「蔡小花」播報硬核財經與 3C 情報。
+實際營運的頻道：**[「小花的AI情報站」](https://www.youtube.com/@%E8%94%A1%E5%B0%8F%E8%8A%B1%E7%9A%84AI%E6%83%85%E5%A0%B1%E7%AB%99)**——虛擬角色「蔡小花」播報硬核財經與 3C 情報。
 
 * **影片規格**：直式短影音 (Shorts / Reels)，9:16，總長 30–50 秒
 * **設計哲學**：不追求「無人值守的全自動」，而是「人機協作的高效半自動」——AI 負責判斷與生成（寫稿、生圖、解析），程式碼負責確定性流程（狀態管理、路由、檔案搬移）
