@@ -3,7 +3,13 @@
 > **AI Content Pipeline** ｜ 個人全端自動化專案
 > 一套從「新聞蒐集 → AI 腳本 → AI 配音 → AI 配圖 → 自動剪輯 → 多平台發布 → 歸檔」的端到端短影音內容生產系統。
 >
-> GitHub：`https://github.com/hank92312/ai-content-pipeline`（私人倉庫）
+> GitHub：`https://github.com/hank92312/ai-content-pipeline`
+>
+> **實際成品頻道：小花的AI情報站**
+> [![YouTube](https://img.shields.io/badge/YouTube-蔡小花的AI情報站-FF0000?logo=youtube&logoColor=white)](https://www.youtube.com/@%E8%94%A1%E5%B0%8F%E8%8A%B1%E7%9A%84AI%E6%83%85%E5%A0%B1%E7%AB%99)
+> [![Instagram](https://img.shields.io/badge/Instagram-@yourflower180-E4405F?logo=instagram&logoColor=white)](https://www.instagram.com/yourflower180/)
+> [![Facebook](https://img.shields.io/badge/Facebook-粉絲專頁-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/profile.php?id=61573260607447)
+> [![TikTok](https://img.shields.io/badge/TikTok-@hank92312-000000?logo=tiktok&logoColor=white)](https://www.tiktok.com/@hank92312)
 
 ---
 
