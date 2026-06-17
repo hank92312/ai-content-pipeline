@@ -68,7 +68,7 @@
 | 領域 | 技術 |
 |------|------|
 | **語言 / 資料層** | Python 3.11、SQLite（內容狀態機）、`python-dotenv`（金鑰隔離） |
-| **AI 文字 / 視覺** | Google **Gemini API**（腳本與文案）、**Gemini Vision**（解析新聞圖）、**Imagen**（風格化生圖） |
+| **AI 文字 / 視覺** | Google **Gemini API**（腳本與文案）、**Gemini Vision**（解析新聞圖）、**Imagen 4**（風格化生圖） |
 | **語音** | **edge-tts**（基礎 TTS + 字級時間軸）+ **RVC / VITS**（音色克隆） |
 | **媒體處理** | **MoviePy 2.0**、Pillow、NumPy（剪輯 / 動態字幕 / 關鍵字標色） |
 | **資料蒐集** | feedparser（RSS）、BeautifulSoup4、requests、pypdf |
