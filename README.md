@@ -131,7 +131,7 @@ python step9_manual_archive.py   # 歸檔
 
 ## 📖 延伸閱讀
 
-* **[完整作品說明書 (PROJECT_PORTFOLIO.md)](PROJECT_PORTFOLIO.md)** — 含設計動機、完整技術細節、工程取捨與個人貢獻說明
+* **[專案詳細說明 (PROJECT_PORTFOLIO.md)](PROJECT_PORTFOLIO.md)** — 含設計動機、完整技術細節、工程取捨與個人貢獻說明
 * **[開發架構指南 (SKILL.md)](SKILL.md)** — 各模組設計細節與開發守則
 
 ---
