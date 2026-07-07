@@ -13,57 +13,9 @@ import calendar
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-# 1. 初始化最新的 Gemini API
-client = genai.Client(api_key=config.GEMINI_API_KEY)
-
-# 1. 資料庫連線與初始化
-conn = sqlite3.connect('auto_channel.db')
-cursor = conn.cursor()
-
-# [新增] 自動建立資料表 (若資料庫全空)
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS DailyNews (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        category TEXT,
-        title TEXT,
-        link TEXT UNIQUE,
-        pub_date TEXT,
-        is_processed INTEGER DEFAULT 0,
-        is_selected INTEGER DEFAULT 0,
-        is_published INTEGER DEFAULT 0,
-        image_url TEXT,
-        content TEXT
-    )
-''')
-conn.commit()
-
-# [自動化小機關]：檢查並新增 is_published 欄位
-try:
-    cursor.execute("ALTER TABLE DailyNews ADD COLUMN is_published INTEGER DEFAULT 0")
-    conn.commit()
-    print("🔧 資料庫已升級：新增 is_published 欄位。")
-except sqlite3.OperationalError:
-    pass
-
-# [自動化小機關]：檢查並新增 image_url 欄位 (支援模組五產圖)
-try:
-    cursor.execute("ALTER TABLE DailyNews ADD COLUMN image_url TEXT")
-    conn.commit()
-    print("🔧 資料庫已升級：新增 image_url 欄位。")
-except sqlite3.OperationalError:
-    pass
-
-# [自動化小機關]：檢查並新增 content 欄位 (支援本地新聞稿全文)
-try:
-    cursor.execute("ALTER TABLE DailyNews ADD COLUMN content TEXT")
-    conn.commit()
-    print("🔧 資料庫已升級：新增 content 欄位。")
-except sqlite3.OperationalError:
-    pass
-
-# 2. 定義來源清單與過濾設定
+# 來源清單與過濾設定
 # limit_type 決定合併計算還是個別計算；method 決定使用點閱率或 AI 篩選
-sources = [
+SOURCES = [
     {"bucket": "Gaming", "category": "Gaming", "url": "https://gnn.gamer.com.tw/rss.xml"},
     {"bucket": "Finance", "category": "Finance", "url": "https://tw.stock.yahoo.com/rss?category=intl-markets"},
     {"bucket": "Finance", "category": "Finance", "url": "https://tw.stock.yahoo.com/rss?category=taiwan-markets"},
@@ -72,7 +24,7 @@ sources = [
     {"bucket": "Tech3C_TKBang", "category": "Tech3C", "url": "https://feeds.feedburner.com/techbang"}
 ]
 
-processing_rules = {
+PROCESSING_RULES = {
     "Gaming": {"method": "views", "limit": 5, "final_category": "Gaming"},
     "Finance": {"method": "ai", "limit": 5, "final_category": "Finance"},
     "Tech3C_TechNews": {"method": "ai", "limit": 2, "final_category": "Tech3C"},
@@ -80,14 +32,9 @@ processing_rules = {
     "Tech3C_TKBang": {"method": "ai", "limit": 2, "final_category": "Tech3C"},
 }
 
-buckets = {k: [] for k in processing_rules.keys()}
 
-print("=============================")
-print("  🕸️ AI 混合爬蟲過濾中心 ")
-print("=============================\n")
-
-# --- 輔助函數：獲取巴哈姆特觀看人數 ---
 def get_bahamut_views(link):
+    """輔助函數：獲取巴哈姆特觀看人數"""
     try:
         res = requests.get(link, timeout=5)
         # 尋找像是 "1234 人觀看" 的字眼
@@ -98,17 +45,20 @@ def get_bahamut_views(link):
         pass
     return 0
 
-# --- 輔助函數：AI 總編輯挑選 ---
-def ai_select_top_n(category, articles, top_n):
-    if not articles: return []
-    if len(articles) <= top_n: return articles
-    
-    print(f"    🧠 啟動 AI 總編輯，正從 {len(articles)} 篇中挑選最佳 {top_n} 篇...")
-    
+
+def ai_select_top_n(client, category, articles, top_n, log=print):
+    """輔助函數：AI 總編輯挑選"""
+    if not articles:
+        return []
+    if len(articles) <= top_n:
+        return articles
+
+    log(f"    🧠 啟動 AI 總編輯，正從 {len(articles)} 篇中挑選最佳 {top_n} 篇...")
+
     prompt = f"你是一頻道的短影音總編輯。請從以下 {len(articles)} 篇 {category} 新聞中，根據「具備爆點、吸引人」的標準，挑選出最適合製作成短影音的前 {top_n} 篇。請務必只回傳包含被選中編號的 JSON 陣列 (例如: [0, 2, 5])，絕對不要回傳其他多餘文字符號。\n\n"
     for idx, art in enumerate(articles):
         prompt += f"[{idx}] 標題: {art['title']}\n"
-        
+
     try:
         response = client.models.generate_content(
             model='gemini-2.5-flash',
@@ -119,171 +69,212 @@ def ai_select_top_n(category, articles, top_n):
             selected_indices = json.loads(match.group(0))
             return [articles[i] for i in selected_indices if i < len(articles)][:top_n]
     except Exception as e:
-        print(f"    ❌ AI 解析失敗: {e}，改用最新文章頂替。")
-        
-    return articles[:top_n] # 發生意外時直接取最新
+        log(f"    ❌ AI 解析失敗: {e}，改用最新文章頂替。")
 
-# --- 步驟 A：收集與初步過濾 ---
-current_time = time.time()
-TIME_WINDOW_LIMIT = 72 * 60 * 60 # 擴大至 72 小時 (3天) 以涵蓋週末
+    return articles[:top_n]  # 發生意外時直接取最新
 
-for src in sources:
-    bucket_id = src["bucket"]
-    url = src["url"]
-    
-    print(f"🔍 掃描來源: {url}")
-    # 增加 User-Agent 以避免被部分網站阻擋 (例如 403 或 404)
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'}
+
+def run(log=print):
+    """執行 RSS 爬蟲：抓取來源 -> AI/點閱率過濾 -> 深度抓圖 -> 寫入資料庫"""
+    # 1. 初始化最新的 Gemini API
+    client = genai.Client(api_key=config.GEMINI_API_KEY)
+
+    # 2. 資料庫連線與初始化
+    conn = sqlite3.connect(config.DB_PATH)
+    cursor = conn.cursor()
+
+    # [新增] 自動建立資料表 (若資料庫全空)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS DailyNews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT,
+            title TEXT,
+            link TEXT UNIQUE,
+            pub_date TEXT,
+            is_processed INTEGER DEFAULT 0,
+            is_selected INTEGER DEFAULT 0,
+            is_published INTEGER DEFAULT 0,
+            image_url TEXT,
+            content TEXT
+        )
+    ''')
+    conn.commit()
+
+    # [自動化小機關]：檢查並新增 is_published 欄位
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            print(f"    ❌ 來源請求失敗 (代碼 {response.status_code}): {url}")
-            continue
-        feed = feedparser.parse(response.text)
-    except Exception as e:
-        print(f"    ❌ 來源解析錯誤: {e}")
-        continue
-    
-    # 每個來源我們最多先考慮前 20 篇，避免 AI token 爆掉或抓太久
-    count = 0
-    for entry in feed.entries:
-        if count >= 20: break
-            
-        # 時效性過濾
-        pass_time_check = False
-        hours_ago = 0
-        if 'published_parsed' in entry and entry.published_parsed:
-            # feedparser 產出的是 UTC 時間元組，需用 timegm 轉換為 UTC 時間戳
-            pub_time = calendar.timegm(entry.published_parsed)
-            diff_seconds = current_time - pub_time
-            hours_ago = diff_seconds / 3600
-            if diff_seconds <= TIME_WINDOW_LIMIT:
-                pass_time_check = True
-        else:
-            # 如果 RSS 沒提供標準時間，無條件先放行
-            pass_time_check = True
-            
-        if not pass_time_check:
-            # 可以取消下面這行的註解來觀察被跳過的新聞
-            # print(f"    ⏩ 跳過: {entry.title[:30]}... ({hours_ago:.1f}h ago)")
-            continue
-            
-        print(f"    ✅ 發現: {entry.title[:30]}... ({hours_ago:.1f}h ago)")
-            
-        # 嘗試從 RSS 中擷取現成的圖片網址
-        image_url = ""
-        if 'media_thumbnail' in entry and len(entry.media_thumbnail) > 0:
-            image_url = entry.media_thumbnail[0]['url']
-        elif 'media_content' in entry and len(entry.media_content) > 0:
-            image_url = entry.media_content[0]['url']
-        if not image_url and 'description' in entry:
-            match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', entry.description)
-            if match:
-                image_url = match.group(1)
-                
-        buckets[bucket_id].append({
-            "title": entry.title,
-            "link": entry.link,
-            "pub_date": entry.get('published', 'Unknown Date'),
-            "image_url": image_url
-        })
-        count += 1
-        
-# --- 步驟 B：依照混合規則進行深度過濾 ---
-final_selected_articles = []
+        cursor.execute("ALTER TABLE DailyNews ADD COLUMN is_published INTEGER DEFAULT 0")
+        conn.commit()
+        log("🔧 資料庫已升級：新增 is_published 欄位。")
+    except sqlite3.OperationalError:
+        pass
 
-for bucket_id, articles in buckets.items():
-    rule = processing_rules[bucket_id]
-    final_cat = rule["final_category"]
-    
-    if not articles:
-        continue
-        
-    print(f"\n⚙️ 處理分組 [{bucket_id}] (共收集 {len(articles)} 篇)")
-    
-    selected = []
-    if rule["method"] == "views":
-        print("    📊 模式: 真實點閱率 (優先)")
-        # 爬取點閱率
-        for art in articles:
-            art["views"] = get_bahamut_views(art["link"])
-        # 由大到小排序
-        articles.sort(key=lambda x: x["views"], reverse=True)
-        selected = articles[:rule["limit"]]
-    else:
-        print("    🤖 模式: AI 總編輯")
-        selected = ai_select_top_n(final_cat, articles, rule["limit"])
-        
-    # 打上最終的系統分類標籤
-    for art in selected:
-        art["sys_category"] = final_cat
-        final_selected_articles.append(art)
-        print(f"    ⭐ 晉級: {art['title'][:30]}...")
+    # [自動化小機關]：檢查並新增 image_url 欄位 (支援模組五產圖)
+    try:
+        cursor.execute("ALTER TABLE DailyNews ADD COLUMN image_url TEXT")
+        conn.commit()
+        log("🔧 資料庫已升級：新增 image_url 欄位。")
+    except sqlite3.OperationalError:
+        pass
 
-# --- 步驟 C：深度抓圖與資料庫寫入 ---
-print("\n=============================")
-print(f"💾 開始深度處理與寫入 (總晉級 {len(final_selected_articles)} 篇)")
-new_insert_count = 0
+    # [自動化小機關]：檢查並新增 content 欄位 (支援本地新聞稿全文)
+    try:
+        cursor.execute("ALTER TABLE DailyNews ADD COLUMN content TEXT")
+        conn.commit()
+        log("🔧 資料庫已升級：新增 content 欄位。")
+    except sqlite3.OperationalError:
+        pass
 
-for art in final_selected_articles:
-    cat = art["sys_category"]
-    title = art["title"]
-    link = art["link"]
-    pub_date = art["pub_date"]
-    image_url = art["image_url"]
+    buckets = {k: [] for k in PROCESSING_RULES.keys()}
 
-    # [深度抓圖升級] 如果 RSS 裡面完全沒有圖片，我們進去網頁抓！
-    if not image_url and link:
+    log("=============================")
+    log("  🕸️ AI 混合爬蟲過濾中心 ")
+    log("=============================\n")
+
+    # --- 步驟 A：收集與初步過濾 ---
+    current_time = time.time()
+    TIME_WINDOW_LIMIT = 72 * 60 * 60  # 擴大至 72 小時 (3天) 以涵蓋週末
+
+    for src in SOURCES:
+        bucket_id = src["bucket"]
+        url = src["url"]
+
+        log(f"🔍 掃描來源: {url}")
+        # 增加 User-Agent 以避免被部分網站阻擋 (例如 403 或 404)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'}
         try:
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'}
-            res = requests.get(link, headers=headers, timeout=10)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.text, 'html.parser')
-                og_image = soup.find("meta", property="og:image")
-                if og_image and og_image.get("content"):
-                    image_url = og_image["content"]
+            response = requests.get(url, headers=headers, timeout=10)
+            if response.status_code != 200:
+                log(f"    ❌ 來源請求失敗 (代碼 {response.status_code}): {url}")
+                continue
+            feed = feedparser.parse(response.text)
         except Exception as e:
-            print(f"  ⚠️ 深度抓圖失敗 [{link}]: {e}")
-            
-    # 寫入資料庫
-    try:
-        cursor.execute('''
-            INSERT INTO DailyNews (category, title, link, pub_date, image_url)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (cat, title, link, pub_date, image_url))
-        new_insert_count += 1
-    except sqlite3.IntegrityError:
-        pass # 重複則略過
+            log(f"    ❌ 來源解析錯誤: {e}")
+            continue
 
-conn.commit()
-conn.close()
+        # 每個來源我們最多先考慮前 20 篇，避免 AI token 爆掉或抓太久
+        count = 0
+        for entry in feed.entries:
+            if count >= 20:
+                break
 
-print(f"\n🎉 執行完畢！經過重重過濾，本次共新增了 {new_insert_count} 筆極品精華到資料庫中。")
+            # 時效性過濾
+            pass_time_check = False
+            hours_ago = 0
+            if 'published_parsed' in entry and entry.published_parsed:
+                # feedparser 產出的是 UTC 時間元組，需用 timegm 轉換為 UTC 時間戳
+                pub_time = calendar.timegm(entry.published_parsed)
+                diff_seconds = current_time - pub_time
+                hours_ago = diff_seconds / 3600
+                if diff_seconds <= TIME_WINDOW_LIMIT:
+                    pass_time_check = True
+            else:
+                # 如果 RSS 沒提供標準時間，無條件先放行
+                pass_time_check = True
 
-# 自動接續執行 1.5 模組
-import subprocess
-print("\n👉 自動接續執行 1.5 挑選模組...")
-subprocess.run([sys.executable, 'step1_5_selector.py'])
+            if not pass_time_check:
+                continue
 
-# 詢問是否執行模組2
-ans2 = input("\n❓ 1.5 模組挑選完畢。是否繼續執行 [模組2: AI產生腳本]？ (y/n，輸入 q 退出): ").strip().lower()
-if ans2 == 'q':
-    print("🚪 中途退出。")
-    sys.exit(0)
-elif ans2 in ['y', 'yes']:
-    print("\n👉 接續執行模組 2...")
-    subprocess.run([sys.executable, 'step2_script_generator.py'])
-    
-    # 執行完模組2後，詢問是否執行模組3
-    ans3 = input("\n❓ 模組 2 執行完畢。是否繼續執行 [模組3: 語音合成]？ (y/n，輸入 q 退出): ").strip().lower()
-    if ans3 == 'q':
-        print("🚪 中途退出。")
-        sys.exit(0)
-    elif ans3 in ['y', 'yes']:
-        print("\n👉 接續執行模組 3...")
-        subprocess.run([sys.executable, 'step3_voice_renderer.py'])
-        print("\n✅ 所有選定之模組皆執行完畢。")
-    else:
-        print("⏸️ 結束執行。")
-else:
-    print("⏸️ 結束執行。")
+            log(f"    ✅ 發現: {entry.title[:30]}... ({hours_ago:.1f}h ago)")
+
+            # 嘗試從 RSS 中擷取現成的圖片網址
+            image_url = ""
+            if 'media_thumbnail' in entry and len(entry.media_thumbnail) > 0:
+                image_url = entry.media_thumbnail[0]['url']
+            elif 'media_content' in entry and len(entry.media_content) > 0:
+                image_url = entry.media_content[0]['url']
+            if not image_url and 'description' in entry:
+                match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', entry.description)
+                if match:
+                    image_url = match.group(1)
+
+            buckets[bucket_id].append({
+                "title": entry.title,
+                "link": entry.link,
+                "pub_date": entry.get('published', 'Unknown Date'),
+                "image_url": image_url
+            })
+            count += 1
+
+    # --- 步驟 B：依照混合規則進行深度過濾 ---
+    final_selected_articles = []
+
+    for bucket_id, articles in buckets.items():
+        rule = PROCESSING_RULES[bucket_id]
+        final_cat = rule["final_category"]
+
+        if not articles:
+            continue
+
+        log(f"\n⚙️ 處理分組 [{bucket_id}] (共收集 {len(articles)} 篇)")
+
+        selected = []
+        if rule["method"] == "views":
+            log("    📊 模式: 真實點閱率 (優先)")
+            # 爬取點閱率
+            for art in articles:
+                art["views"] = get_bahamut_views(art["link"])
+            # 由大到小排序
+            articles.sort(key=lambda x: x["views"], reverse=True)
+            selected = articles[:rule["limit"]]
+        else:
+            log("    🤖 模式: AI 總編輯")
+            selected = ai_select_top_n(client, final_cat, articles, rule["limit"], log=log)
+
+        # 打上最終的系統分類標籤
+        for art in selected:
+            art["sys_category"] = final_cat
+            final_selected_articles.append(art)
+            log(f"    ⭐ 晉級: {art['title'][:30]}...")
+
+    # --- 步驟 C：深度抓圖與資料庫寫入 ---
+    log("\n=============================")
+    log(f"💾 開始深度處理與寫入 (總晉級 {len(final_selected_articles)} 篇)")
+    new_insert_count = 0
+
+    for art in final_selected_articles:
+        cat = art["sys_category"]
+        title = art["title"]
+        link = art["link"]
+        pub_date = art["pub_date"]
+        image_url = art["image_url"]
+
+        # [深度抓圖升級] 如果 RSS 裡面完全沒有圖片，我們進去網頁抓！
+        if not image_url and link:
+            try:
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'}
+                res = requests.get(link, headers=headers, timeout=10)
+                if res.status_code == 200:
+                    soup = BeautifulSoup(res.text, 'html.parser')
+                    og_image = soup.find("meta", property="og:image")
+                    if og_image and og_image.get("content"):
+                        image_url = og_image["content"]
+            except Exception as e:
+                log(f"  ⚠️ 深度抓圖失敗 [{link}]: {e}")
+
+        # 寫入資料庫
+        try:
+            cursor.execute('''
+                INSERT INTO DailyNews (category, title, link, pub_date, image_url)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (cat, title, link, pub_date, image_url))
+            new_insert_count += 1
+        except sqlite3.IntegrityError:
+            pass  # 重複則略過
+
+    conn.commit()
+    conn.close()
+
+    log(f"\n🎉 執行完畢！經過重重過濾，本次共新增了 {new_insert_count} 筆極品精華到資料庫中。")
+    return {"new_count": new_insert_count}
+
+
+def main():
+    """CLI 互動版：執行爬蟲後接續詢問後續模組"""
+    run()
+
+    import pipeline_chain
+    pipeline_chain.run_and_offer_next(auto_run_selector=True)
+
+
+if __name__ == "__main__":
+    main()
