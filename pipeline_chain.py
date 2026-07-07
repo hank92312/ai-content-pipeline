@@ -7,6 +7,21 @@ import sys
 import subprocess
 
 
+def offer_voice_only():
+    """CLI 專用：僅匯入已具備完整腳本的 JSON 檔案時，跳過選題與腳本生成，直接詢問模組3"""
+    print("\n💡 本次僅匯入已具備腳本的 JSON 檔案，將自動跳過「總編輯選題 (1.5)」與「AI 劇本生成 (2)」步驟。")
+    ans3 = input("\n❓ 是否直接執行 [模組3: 語音合成]？ (y/n，輸入 q 退出): ").strip().lower()
+    if ans3 == 'q':
+        print("🚪 中途退出。")
+        sys.exit(0)
+    elif ans3 in ['y', 'yes']:
+        print("\n👉 接續執行模組 3...")
+        subprocess.run([sys.executable, 'step3_voice_renderer.py'])
+        print("\n✅ 所有選定之模組皆執行完畢。")
+    else:
+        print("⏸️ 結束執行。")
+
+
 def run_and_offer_next(auto_run_selector=True):
     """
     auto_run_selector: True 表示先自動執行一次 1.5 選題模組 (符合 scraper/manual_add 的既有行為)，
