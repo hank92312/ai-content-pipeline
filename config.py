@@ -32,8 +32,20 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # --- 全域參數 ---
 TTS_SPEED = "+25%"  # 語速加快 25%
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-2.5-flash"  # 用於 step8 行銷文案生成 (與下方腳本生成模型清單用途不同)
 BGM_VOLUME = 0.08  # 背景音樂音量比例 (預設 0.04，避免壓過口播)
+
+# AI 腳本生成模型清單 (step2 與 GUI 共用)
+SCRIPT_MODELS_STANDARD = {
+    "gemini-3-flash (3.1 Flash, 預設)": "gemini-3-flash-preview",
+    "gemini-3.5-flash (最新旗艦級效率)": "gemini-3.5-flash",
+}
+SCRIPT_MODELS_PRO = {
+    "gemini-2.5-pro (穩定高階)": "gemini-2.5-pro",
+    "gemini-3-flash (新一代快速)": "gemini-3-flash-preview",
+    "gemini-3.1-pro (最新一代高階)": "gemini-3.1-pro-preview",
+    "gemini-3.5-flash (最新旗艦級效率)": "gemini-3.5-flash",
+}
 
 
 # 確保所有輸出目錄都存在
