@@ -111,6 +111,7 @@
 | 爬蟲/解析 | `feedparser`、`BeautifulSoup4`、`requests`、`pypdf` | RSS / 網頁 / PDF 多來源匯入 |
 | 影片剪輯 | **MoviePy 2.0+**、`Pillow`、`numpy` | 素材動態對齊、字幕動態繪製、關鍵字標色 |
 | 瀏覽器自動化 | **Playwright** | 模擬真人發布，含 Session 持久化 |
+| 圖形化介面 | **NiceGUI** | 網頁式控制台，背景執行緒處理長任務、即時 Log 廣播 |
 
 ### 4.4 硬體加速（工程亮點）
 | 模組 | 加速路徑 | 降級策略 |
@@ -166,6 +167,11 @@ AIprojects/
 ├── step8_auto_uploader.py     # 模組8：發布主控
 ├── step9_manual_archive.py    # 模組9：歸檔
 │
+├── app.py                     # GUI 主入口 (python app.py)
+├── gui/                       # NiceGUI 圖形化控制台
+│   ├── state.py / runner.py / layout.py / data.py
+│   └── pages/                 # 儀表板 + 8 個模組頁面
+│
 ├── uploaders/                 # 各平台發布策略
 │   ├── base.py
 │   ├── youtube.py / facebook.py / instagram.py / tiktok.py / xiaohongshu.py
@@ -211,6 +217,12 @@ python step9_manual_archive.py   # 歸檔
 
 > 程式內建硬體偵測，無顯卡環境會自動降級 CPU，無需改任何設定。
 
+也可改用圖形化控制台一次管理整條管線：
+
+```powershell
+python app.py   # 啟動 NiceGUI 控制台，預設開啟 http://localhost:8080
+```
+
 ---
 
 ## 8. 影片規格與內容設定
@@ -228,6 +240,7 @@ python step9_manual_archive.py   # 歸檔
 | 項目 | 狀態 |
 |------|------|
 | 模組 1, 1.5, 2, 3, 5, 6, 8, 9 | ✅ 已完成並串接 |
+| 圖形化控制台（NiceGUI） | ✅ 已完成，含儀表板與 8 個模組頁面 |
 | 模組 4 虛擬角色動態驅動（Wav2Lip / SadTalker 嘴型同步） | 🚧 規劃中，目前用靜態去背頭像 |
 | edge-tts 斷句停頓感 | 待 RVC 模型成熟後根本性修正 |
 | 小紅書（xiaohongshu）發布 | 模組已備，持續調校 |
