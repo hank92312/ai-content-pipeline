@@ -93,13 +93,11 @@ class FacebookUploader(PlaywrightUploaderBase):
                             break
                     except: pass
                     
-                    # 偵測手動按鍵
-                    import msvcrt
-                    if msvcrt.kbhit():
-                        key = msvcrt.getch().decode('utf-8').upper()
-                        if key == 'S': return True
-                        if key == 'R': raise Exception("User requested retry")
-                        if key == 'W': sw = time.time() # Reset
+                    # 偵測人工即時介入指令
+                    decision = self.check_control_key()
+                    if decision == 'skip': return True
+                    if decision == 'retry': raise Exception("User requested retry")
+                    if decision == 'wait': sw = time.time()  # Reset
 
                     time.sleep(5)
                 

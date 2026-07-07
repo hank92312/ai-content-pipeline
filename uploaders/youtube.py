@@ -84,19 +84,17 @@ class YouTubeUploader(PlaywrightUploaderBase):
                         success_found = True
                         break
                     
-                    # 偵測手動按鍵
-                    import msvcrt
-                    if msvcrt.kbhit():
-                        key = msvcrt.getch().decode('utf-8').upper()
-                        if key == 'S': 
-                            print("    ⏩ 使用者選擇跳過。")
-                            return True
-                        if key == 'R': 
-                            print("    🔄 使用者選擇重試影片上傳。")
-                            raise Exception("User requested retry")
-                        if key == 'W':
-                            print("    ➕ 已重置等待計時器。")
-                            start_time = time.time()
+                    # 偵測人工即時介入指令
+                    decision = self.check_control_key()
+                    if decision == 'skip':
+                        print("    ⏩ 使用者選擇跳過。")
+                        return True
+                    if decision == 'retry':
+                        print("    🔄 使用者選擇重試影片上傳。")
+                        raise Exception("User requested retry")
+                    if decision == 'wait':
+                        print("    ➕ 已重置等待計時器。")
+                        start_time = time.time()
                     
                     time.sleep(2)
                 

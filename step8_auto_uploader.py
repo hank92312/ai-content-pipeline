@@ -3,6 +3,7 @@ import glob
 import sys
 import time
 import json
+import threading
 import sqlite3
 import config
 from google import genai
@@ -16,6 +17,7 @@ from uploaders import (
     TikTokUploader,
     XiaohongshuUploader
 )
+from uploaders.base import UploadControl
 
 # 修正 Windows 終端機印出 Emoji 的編碼問題
 sys.stdout.reconfigure(encoding='utf-8')
@@ -26,8 +28,10 @@ SCRIPTS_DIR = config.OUTPUT_SCRIPTS
 USER_DATA_DIR = config.PLAYWRIGHT_SESSION_DIR
 GEMINI_API_KEY = config.GEMINI_API_KEY
 
+
 def get_gemini_client():
     return genai.Client(api_key=GEMINI_API_KEY)
+
 
 def get_unpublished_video_list():
     """從資料庫中找出尚未發布 (is_published=0) 的影片檔案列表"""
@@ -37,7 +41,7 @@ def get_unpublished_video_list():
     cursor.execute("SELECT id, category FROM DailyNews WHERE is_processed = 1 AND is_published = 0")
     records = cursor.fetchall()
     conn.close()
-    
+
     video_files = []
     for news_id, category in records:
         basename = f"script_{category}_{news_id}"
@@ -46,12 +50,14 @@ def get_unpublished_video_list():
             video_files.append(video_path)
     return video_files
 
+
 def extract_basename(video_path: str) -> str:
     """從影片名稱中擷取出腳本原始 BaseName (例如 script_Finance_8)"""
     filename = os.path.basename(video_path)
     return filename.replace("_subtitled.mp4", "")
 
-def generate_marketing_copy(script_text: str):
+
+def generate_marketing_copy(script_text: str, log=print):
     """呼叫 Gemini 產生吸睛標題與 Hashtags"""
     client = get_gemini_client()
     sys_instruction = (
@@ -60,9 +66,9 @@ def generate_marketing_copy(script_text: str):
         "並提供5-8個最相關、有流量的 Hashtag。\n"
         "請嚴格以 JSON 格式回應，包含 'title' 與 'tags' 兩個欄位，其中 tags 需為字串，每個 tag 以空白分隔（例如 '#AI #科技'）。"
     )
-    
+
     prompt = f"請看這份逐字稿：\n{script_text}"
-    
+
     try:
         response = client.models.generate_content(
             model=config.GEMINI_MODEL,
@@ -75,21 +81,22 @@ def generate_marketing_copy(script_text: str):
         )
         return json.loads(response.text)
     except Exception as e:
-         print(f"❌ Gemini API 呼叫失敗: {e}")
-         return {"title": "【最新情報】小花的 AI 快報！", "tags": "#AI #科技 #小花的AI情報站"}
+        log(f"❌ Gemini API 呼叫失敗: {e}")
+        return {"title": "【最新情報】小花的 AI 快報！", "tags": "#AI #科技 #小花的AI情報站"}
 
-def launch_login_mode():
+
+def launch_login_mode(log=print):
     """啟動 Playwright 並不關閉，讓使用者手動登入各大平台"""
-    print("========================================")
-    print("  🔑 啟動【登入授權模式】")
-    print("========================================")
-    print("即將開啟瀏覽器，請在瀏覽器中手動登入以下平台：")
-    print("- YouTube (studio.youtube.com)")
-    print("- Facebook (business.facebook.com)")
-    print("- Instagram (instagram.com)")
-    print("- TikTok (tiktok.com)")
-    print("登入完成後，只要把瀏覽器關閉，登入狀態就會自動儲存在本地！\n")
-    
+    log("========================================")
+    log("  🔑 啟動【登入授權模式】")
+    log("========================================")
+    log("即將開啟瀏覽器，請在瀏覽器中手動登入以下平台：")
+    log("- YouTube (studio.youtube.com)")
+    log("- Facebook (business.facebook.com)")
+    log("- Instagram (instagram.com)")
+    log("- TikTok (tiktok.com)")
+    log("登入完成後，只要把瀏覽器關閉，登入狀態就會自動儲存在本地！\n")
+
     with sync_playwright() as p:
         browser = p.chromium.launch_persistent_context(
             user_data_dir=USER_DATA_DIR,
@@ -100,17 +107,118 @@ def launch_login_mode():
         )
         page = browser.new_page()
         page.goto("https://www.google.com")
-        
-        print("🌍 瀏覽器已開啟！請開始您的登入作業。登入完畢請直接關閉瀏覽器。")
+
+        log("🌍 瀏覽器已開啟！請開始您的登入作業。登入完畢請直接關閉瀏覽器。")
         try:
             page.wait_for_timeout(999999999)
-        except:
+        except Exception:
             pass
         finally:
-            print("💾 瀏覽器已關閉，您的登入狀態已儲存至 playwright_session/。")
+            log("💾 瀏覽器已關閉，您的登入狀態已儲存至 playwright_session/。")
+
+
+def run(video_paths, platforms, control=None, log=print, before_close=None):
+    """
+    對指定影片清單依序執行多平台自動發布 (Playwright 瀏覽器自動化)。
+
+    video_paths: 欲發布的影片檔案完整路徑清單 (來自 get_unpublished_video_list())
+    platforms: 平台代碼清單，1=YouTube 2=Facebook 3=Instagram 4=TikTok
+    control: UploadControl 執行個體，供人工即時介入 (跳過/重試/重置等待)。
+             未提供則自動建立一個獨立實例 (CLI 由 main() 綁定鍵盤監聽；GUI 需自行建立並用按鈕操作對應 Event)。
+    before_close: 選填 callback，於瀏覽器關閉前呼叫 (CLI 用來暫停等待人工覆核；GUI 通常留空，處理完立即釋放瀏覽器)。
+
+    回傳: {"processed": [{"video":..., "title":..., "tags":..., "results": {...}}, ...]}
+    """
+    if control is None:
+        control = UploadControl()
+
+    if not video_paths or not platforms:
+        log("❌ 未選擇任何有效的影片或平台，已退出。")
+        return {"processed": []}
+
+    log("\n🚀 啟動自動化發布程序...")
+    processed = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch_persistent_context(
+            user_data_dir=USER_DATA_DIR,
+            headless=False,
+            channel="chrome",
+            ignore_default_args=["--enable-automation"],
+            args=["--disable-blink-features=AutomationControlled"]
+        )
+        page = browser.new_page()
+
+        for i, selected_video in enumerate(video_paths, 1):
+            log(f"\n========================================")
+            log(f" 🎬 處理影片 ({i}/{len(video_paths)}): {os.path.basename(selected_video)}")
+            log(f"========================================")
+
+            basename = extract_basename(selected_video)
+            script_json_path = os.path.join(SCRIPTS_DIR, f"{basename}.json")
+
+            script_text = ""
+            if os.path.exists(script_json_path):
+                with open(script_json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    script_text = f"{data.get('intro', '')} {data.get('main_content', '')} {data.get('outro', '')}"
+
+            log("🧠 正在呼叫 Gemini 生成吸睛標題與 Hashtags...")
+            marketing_data = generate_marketing_copy(script_text, log=log)
+            title = marketing_data.get("title", "")
+            tags = marketing_data.get("tags", "")
+
+            log(f"  📌 標題：{title}")
+            log(f"  🏷️ 標籤：{tags}")
+
+            results = {}
+            if 1 in platforms:
+                results['youtube'] = YouTubeUploader(page, control=control).upload(os.path.abspath(selected_video), title, tags)
+            if 2 in platforms:
+                results['facebook'] = FacebookUploader(page, control=control).upload(os.path.abspath(selected_video), title, tags)
+            if 3 in platforms:
+                results['instagram'] = InstagramUploader(page, control=control).upload(os.path.abspath(selected_video), title, tags)
+            if 4 in platforms:
+                results['tiktok'] = TikTokUploader(page, control=control).upload(os.path.abspath(selected_video), title, tags)
+
+            processed.append({"video": selected_video, "title": title, "tags": tags, "results": results})
+
+        log("\n🎉 所有指定影片發布腳本執行完畢！")
+        log("💡 提示：瀏覽器將保持開啟狀態，供您檢查上傳狀態。")
+        log("          確認無誤後，請直接手動關閉瀏覽器視窗即可。")
+
+        if before_close:
+            before_close()
+
+    return {"processed": processed}
+
+
+def _start_keyboard_listener(control):
+    """CLI 專用：背景執行緒監聽鍵盤 S/R/W，轉換為 UploadControl 事件 (daemon，隨主行程結束)"""
+    import msvcrt
+
+    def _listen():
+        while True:
+            if msvcrt.kbhit():
+                try:
+                    ch = msvcrt.getch().decode('utf-8').upper()
+                except Exception:
+                    continue
+                if ch == 'S':
+                    control.skip.set()
+                elif ch == 'R':
+                    control.retry.set()
+                elif ch == 'W':
+                    control.reset_wait.set()
+            time.sleep(0.1)
+
+    t = threading.Thread(target=_listen, daemon=True)
+    t.start()
+    return t
 
 
 def main():
+    """CLI 互動版"""
     print("========================================")
     print("  🚀 模組八：多平台自動發布機器人")
     print("========================================")
@@ -129,16 +237,16 @@ def main():
     print("📦 發現以下可發布的影片：")
     for idx, vf in enumerate(video_files):
         print(f"[{idx}] {os.path.basename(vf)}")
-    
+
     print("--------------------")
     print("👉 請輸入您要發布的影片編號 (多筆請用逗號隔開例如 0,2，或輸入 A 全選)")
     print("   或輸入 'D' 進入「首次登入模式」：")
     choice = input("> ").strip().upper()
-    
+
     if choice == 'D':
         launch_login_mode()
         return
-        
+
     selected_videos = []
     if choice == 'A':
         selected_videos = video_files
@@ -149,13 +257,13 @@ def main():
                 selected_videos.append(video_files[selected_idx])
             except (ValueError, IndexError):
                 pass
-                
+
     if not selected_videos:
         print("❌ 未選擇任何有效的影片，已退出。")
         return
-    
+
     print(f"\n✅ 已選擇 {len(selected_videos)} 部影片準備發布！")
-    
+
     # --- 平台選擇介面 ---
     print("\n🌐 請問您要將這些影片發布到哪些平台？")
     print("  [1] YouTube Shorts")
@@ -164,12 +272,12 @@ def main():
     print("  [4] TikTok")
     print("  [6] 🔥 全部發布 (1~4)")
     print("  [Q] 退出取消")
-    
+
     platforms_choice = input("👉 請輸入選項 (如果是多個可用逗號隔開, 例如: 1,3) > ").strip().upper()
-    
+
     if platforms_choice == 'Q':
         return
-        
+
     targets = []
     if '6' in platforms_choice:
         targets = [1, 2, 3, 4]
@@ -177,56 +285,22 @@ def main():
         for p in platforms_choice.split(','):
             try:
                 targets.append(int(p.strip()))
-            except:
+            except Exception:
                 pass
-                
+
     if not targets:
         print("❌ 未選擇任何有效的平台，已退出。")
         return
 
-    # 啟動 Playwright
-    print("\n🚀 啟動自動化發布程序...")
-    with sync_playwright() as p:
-        browser = p.chromium.launch_persistent_context(
-            user_data_dir=USER_DATA_DIR,
-            headless=False, 
-            channel="chrome",
-            ignore_default_args=["--enable-automation"],
-            args=["--disable-blink-features=AutomationControlled"]
-        )
-        page = browser.new_page()
+    # 啟動鍵盤監聽 (S/R/W)，並綁定至 UploadControl
+    control = UploadControl()
+    _start_keyboard_listener(control)
 
-        for i, selected_video in enumerate(selected_videos, 1):
-            print(f"\n========================================")
-            print(f" 🎬 處理影片 ({i}/{len(selected_videos)}): {os.path.basename(selected_video)}")
-            print(f"========================================")
-            
-            basename = extract_basename(selected_video)
-            script_json_path = os.path.join(SCRIPTS_DIR, f"{basename}.json")
-            
-            script_text = ""
-            if os.path.exists(script_json_path):
-                with open(script_json_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    script_text = f"{data.get('intro', '')} {data.get('main_content', '')} {data.get('outro', '')}"
+    run(
+        selected_videos, targets, control=control,
+        before_close=lambda: input("\n👉 按下 [Enter] 鍵結束程式...")
+    )
 
-            print("🧠 正在呼叫 Gemini 生成吸睛標題與 Hashtags...")
-            marketing_data = generate_marketing_copy(script_text)
-            title = marketing_data.get("title", "")
-            tags = marketing_data.get("tags", "")
-            
-            print(f"  📌 標題：{title}")
-            print(f"  🏷️ 標籤：{tags}")
-            
-            if 1 in targets: YouTubeUploader(page).upload(os.path.abspath(selected_video), title, tags)
-            if 2 in targets: FacebookUploader(page).upload(os.path.abspath(selected_video), title, tags)
-            if 3 in targets: InstagramUploader(page).upload(os.path.abspath(selected_video), title, tags)
-            if 4 in targets: TikTokUploader(page).upload(os.path.abspath(selected_video), title, tags)
-            
-        print("\n🎉 所有指定影片發布腳本執行完畢！")
-        print("💡 提示：瀏覽器將保持開啟狀態，供您檢查上傳狀態。")
-        print("          確認無誤後，請直接手動關閉瀏覽器視窗即可。")
-        input("\n👉 按下 [Enter] 鍵結束程式...")
 
 if __name__ == "__main__":
     main()
