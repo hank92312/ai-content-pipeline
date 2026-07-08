@@ -60,7 +60,11 @@ def visual_page():
                 refresh_pending()
                 refresh_gallery()
 
-            ok = run_in_background('AI 配圖生成', step5_visual_generator.run, on_done=on_done)
+            _, total_images = _count_pending_images()
+            ok = run_in_background(
+                'AI 配圖生成', step5_visual_generator.run, on_done=on_done,
+                total_items=total_images, item_marker='🎨 準備生成第',
+            )
             if not ok:
                 gen_btn.enable()
 

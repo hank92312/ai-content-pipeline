@@ -49,7 +49,9 @@ def script_page():
 
             ok = run_in_background(
                 'AI 腳本生成', step2_script_generator.run,
-                mode=mode_radio.value, model=model_select.value, on_done=on_done
+                mode=mode_radio.value, model=model_select.value, on_done=on_done,
+                total_items=len(step2_script_generator.get_selected_news()),
+                item_marker='🎬 正在產製',
             )
             if not ok:
                 gen_btn.enable()

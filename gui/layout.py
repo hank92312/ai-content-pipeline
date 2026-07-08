@@ -27,15 +27,38 @@ def page_shell(active_path: str):
         with ui.row().classes('items-center gap-2'):
             ui.icon('smart_toy').classes('text-2xl')
             ui.label('小花的AI情報站 — 內容自動化控制台').classes('text-lg font-bold')
-        status_badge = ui.badge('閒置', color='grey').classes('text-sm')
+
+        with ui.column().classes('items-end gap-0'):
+            status_badge = ui.badge('閒置', color='grey').classes('text-sm')
+            progress_bar = ui.linear_progress(value=0, show_value=False).classes('w-48 mt-1')
+            progress_bar.visible = False
+            progress_label = ui.label('').classes('text-xs text-slate-400')
+
+        def _fmt(seconds):
+            seconds = int(seconds)
+            m, s = divmod(seconds, 60)
+            return f'{m}:{s:02d}'
 
         def _update_status():
             if state.is_busy:
                 status_badge.text = f'🟡 執行中：{state.running_module}'
                 status_badge.props('color=orange')
+                current, total, elapsed, remaining = state.progress
+                progress_bar.visible = True
+                if total > 0:
+                    progress_bar.props(remove='indeterminate')
+                    progress_bar.value = current / total
+                    remain_txt = f'・剩餘約 {_fmt(remaining)}' if remaining is not None else ''
+                    progress_label.text = f'{current}/{total}・已耗時 {_fmt(elapsed)}{remain_txt}'
+                else:
+                    progress_bar.props('indeterminate')
+                    progress_bar.value = 0
+                    progress_label.text = f'已耗時 {_fmt(elapsed)}（處理中，總筆數未知）'
             else:
                 status_badge.text = '🟢 閒置'
                 status_badge.props('color=grey')
+                progress_bar.visible = False
+                progress_label.text = ''
         ui.timer(1.0, _update_status)
 
     with ui.left_drawer(fixed=True).classes('bg-slate-900') as drawer:

@@ -10,15 +10,16 @@ import traceback
 from .state import state
 
 
-def run_in_background(module_name, target, *args, on_done=None, **kwargs):
+def run_in_background(module_name, target, *args, on_done=None, total_items=0, item_marker=None, **kwargs):
     """
     在背景執行緒呼叫 target(*args, log=state.log, **kwargs)。
     module_name: 顯示於「執行中」狀態的模組名稱，同時作為全域執行鎖的持有者標籤。
     on_done(result, error): 執行緒收尾後呼叫 (注意：此 callback 仍在背景執行緒內，
                              若要更新 UI 元件，需搭配 ui.timer 輪詢共用狀態，而非直接操作 UI)。
+    total_items / item_marker: 傳給 state.try_start()，用於畫面顯示進度條與預估剩餘時間 (詳見 state.py)。
     回傳: True 表示已成功排入背景執行；False 表示目前已有其他模組在執行中 (未啟動)。
     """
-    if not state.try_start(module_name):
+    if not state.try_start(module_name, total_items=total_items, item_marker=item_marker):
         state.log(f"⚠️ 目前已有模組「{state.running_module}」正在執行中，請稍候再試。")
         return False
 

@@ -47,7 +47,11 @@ def voice_page():
                 refresh_pending()
                 refresh_outputs()
 
-            ok = run_in_background('語音渲染', step3_voice_renderer.run, on_done=on_done)
+            pending_count = len(glob.glob(os.path.join(config.OUTPUT_SCRIPTS, "*.txt")))
+            ok = run_in_background(
+                '語音渲染', step3_voice_renderer.run, on_done=on_done,
+                total_items=pending_count, item_marker='🎬 正在處理：',
+            )
             if not ok:
                 render_btn.enable()
 

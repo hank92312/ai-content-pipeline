@@ -80,12 +80,14 @@ def video_page():
                 refresh_pending()
                 refresh_outputs()
 
+            voice_count = len(glob.glob(os.path.join(config.OUTPUT_VOICES, "*_final.wav")))
             ok = run_in_background(
                 '影片合成', step6_video_assembly.run,
                 mode=mode,
                 custom_video=custom_video['value'], custom_image=custom_image['value'],
                 custom_anchor=custom_anchor['value'], custom_music=custom_music['value'],
-                on_done=on_done
+                on_done=on_done,
+                total_items=voice_count, item_marker='▶ 正在合成並上字幕：',
             )
             if not ok:
                 assemble_btn.enable()

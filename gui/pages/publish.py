@@ -104,7 +104,8 @@ def publish_page():
 
             ok = run_in_background(
                 '多平台發布', step8_auto_uploader.run,
-                selected, targets, control=control, on_done=on_done
+                selected, targets, control=control, on_done=on_done,
+                total_items=len(selected), item_marker='🎬 處理影片 (',
             )
             if not ok:
                 publish_btn.enable()
