@@ -150,6 +150,14 @@ python app.py
 
 > 兩種操作方式（CLI 指令與圖形化介面）共用同一套底層邏輯，可依場景交替使用。
 
+<table>
+<tr>
+<td><img src="docs/screenshots/dashboard.png" alt="管線儀表板" width="400"/><br/><sub>管線儀表板：六階段進度一目瞭然</sub></td>
+<td><img src="docs/screenshots/collect.png" alt="資料蒐集頁" width="400"/><br/><sub>資料蒐集：付費 API 以 💰 標示</sub></td>
+<td><img src="docs/screenshots/publish.png" alt="多平台發布頁" width="400"/><br/><sub>多平台發布：人工即時介入按鈕</sub></td>
+</tr>
+</table>
+
 ---
 
 ## 📖 延伸閱讀
