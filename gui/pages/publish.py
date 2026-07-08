@@ -6,6 +6,7 @@ import step8_auto_uploader
 from uploaders.base import UploadControl
 from gui.layout import page_shell
 from gui.runner import run_in_background
+from gui.confirm import confirm_api_action
 
 PLATFORM_OPTIONS = {1: 'YouTube Shorts', 2: 'Facebook Reels', 3: 'Instagram Reels', 4: 'TikTok'}
 
@@ -109,8 +110,23 @@ def publish_page():
                 publish_btn.enable()
                 control_row.visible = False
 
+        def ask_publish():
+            selected = [v for v, cb in checked_videos.items() if cb.value]
+            targets = [code for code, cb in platform_checks.items() if cb.value]
+            if not selected or not targets:
+                ui.notify('請至少選擇一部影片與一個平台', type='warning')
+                return
+            confirm_api_action(
+                '多平台自動發布',
+                [
+                    f'行銷文案生成：每部影片呼叫 1 次 Gemini ({len(selected)} 部影片 = {len(selected)} 次)',
+                    f'並將實際發布至 {len(targets)} 個平台 (發布動作本身不可逆，請確認影片內容無誤)',
+                ],
+                do_publish,
+            )
+
         with ui.row().classes('items-center gap-2'):
-            publish_btn = ui.button('🚀 開始發布', icon='rocket_launch', on_click=do_publish, color='primary')
+            publish_btn = ui.button('🚀 開始發布 💰', icon='rocket_launch', on_click=ask_publish, color='primary')
             ui.button(icon='refresh', on_click=refresh_videos).props('flat round')
 
         refresh_videos()

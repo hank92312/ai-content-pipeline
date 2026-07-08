@@ -6,6 +6,7 @@ import step1_local_loader
 from gui.layout import page_shell
 from gui.runner import run_in_background
 from gui.state import state
+from gui.confirm import confirm_api_action
 
 
 @ui.page('/collect')
@@ -23,7 +24,7 @@ def collect_page():
             # --- RSS 自動爬蟲 ---
             with ui.tab_panel(tab_rss):
                 ui.label('自動掃描設定好的 RSS 來源，並用 AI 篩選最具話題性的新聞。').classes('text-slate-400 text-sm')
-                rss_btn = ui.button('🔍 開始抓取', icon='cloud_download')
+                rss_btn = ui.button('🔍 開始抓取 💰', icon='cloud_download')
 
                 def do_scrape():
                     rss_btn.disable()
@@ -35,7 +36,17 @@ def collect_page():
                     if not ok:
                         rss_btn.enable()
 
-                rss_btn.on_click(do_scrape)
+                def ask_scrape():
+                    confirm_api_action(
+                        '資料蒐集 (RSS 爬蟲)',
+                        [
+                            'AI 總編輯篩選：Gemini (gemini-2.5-flash) 約 3~4 次呼叫 (Finance / Tech3C 各分組一次)',
+                            'RSS 抓取與網頁抓圖本身免費',
+                        ],
+                        do_scrape,
+                    )
+
+                rss_btn.on_click(ask_scrape)
 
             # --- 貼網址 ---
             with ui.tab_panel(tab_manual):

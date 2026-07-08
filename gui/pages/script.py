@@ -4,6 +4,7 @@ import config
 import step2_script_generator
 from gui.layout import page_shell
 from gui.runner import run_in_background
+from gui.confirm import confirm_api_action
 
 
 @ui.page('/script')
@@ -53,4 +54,18 @@ def script_page():
             if not ok:
                 gen_btn.enable()
 
-        gen_btn = ui.button('🧠 開始生成', icon='auto_awesome', on_click=do_generate, color='primary')
+        def ask_generate():
+            selected_count = len(step2_script_generator.get_selected_news())
+            if selected_count == 0:
+                ui.notify('目前沒有「已選定」的新聞，請先到選題台勾選。不會呼叫任何 API。', type='warning')
+                return
+            confirm_api_action(
+                'AI 腳本生成',
+                [
+                    f'將為 {selected_count} 則已選定新聞，各呼叫 1 次 Gemini ({model_select.value})',
+                    f'共計 {selected_count} 次付費 API 呼叫',
+                ],
+                do_generate,
+            )
+
+        gen_btn = ui.button('🧠 開始生成 💰', icon='auto_awesome', on_click=ask_generate, color='primary')
