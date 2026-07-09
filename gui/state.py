@@ -73,14 +73,19 @@ class ExecutionState:
 
     @property
     def progress(self):
-        """回傳 (目前筆數, 總筆數, 已耗時秒數, 預估剩餘秒數或 None)"""
+        """
+        回傳 (目前筆數, 總筆數, 已耗時秒數, 預估剩餘秒數或 None)。
+        剩餘時間以「已完成筆數」推估 (current 為正在處理中的筆數，故已完成 = current - 1)；
+        尚無任何一筆完成時無法推估，回傳 None (由畫面顯示為「計算中」)。
+        """
         if not self._start_time:
             return 0, 0, 0, None
         elapsed = time.time() - self._start_time
         current, total = self._current_item, self._total_items
+        completed = max(current - 1, 0)
         remaining = None
-        if total > 0 and current > 0:
-            remaining = (elapsed / current) * max(total - current, 0)
+        if total > 0 and completed > 0:
+            remaining = (elapsed / completed) * max(total - completed, 0)
         return current, total, elapsed, remaining
 
 

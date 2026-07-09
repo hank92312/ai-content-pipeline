@@ -45,12 +45,19 @@ def page_shell(active_path: str):
                 status_badge.props('color=orange')
                 current, total, elapsed, remaining = state.progress
                 progress_bar.visible = True
-                if total > 0:
+                if total > 1:
+                    # 多筆：確定進度條 + 剩餘時間估算 (首筆完成前顯示「計算中」)
                     progress_bar.props(remove='indeterminate')
                     progress_bar.value = current / total
-                    remain_txt = f'・剩餘約 {_fmt(remaining)}' if remaining is not None else ''
+                    remain_txt = f'・剩餘約 {_fmt(remaining)}' if remaining is not None else '・剩餘計算中…'
                     progress_label.text = f'{current}/{total}・已耗時 {_fmt(elapsed)}{remain_txt}'
+                elif total == 1:
+                    # 單筆：內部無法細分進度，用動態進度條 + 已耗時
+                    progress_bar.props('indeterminate')
+                    progress_bar.value = 0
+                    progress_label.text = f'已耗時 {_fmt(elapsed)}（處理單筆中）'
                 else:
+                    # 總筆數未知
                     progress_bar.props('indeterminate')
                     progress_bar.value = 0
                     progress_label.text = f'已耗時 {_fmt(elapsed)}（處理中，總筆數未知）'
