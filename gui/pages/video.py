@@ -46,7 +46,16 @@ def video_page():
                     ui.select({0: '不增加音樂', 1: '從素材資料夾 (降音作為 BGM)'}, value=1, label='音樂來源') \
                         .classes('w-full').bind_value(custom_music, 'value')
 
-        MODE_MAP = {tab1: 1, tab2: 2, tab3: 3, tab4: 4}
+        # tabs.value 可能是「名稱字串」(點擊後)、tab 物件、或 None (尚未點擊，預設為原模式)。
+        # 同時建立兩種對照，查詢時三種情況都能正確解析。
+        MODE_BY_NAME = {'原模式': 1, '素材模式': 2, '去主播素材模式': 3, '客製化模式': 4}
+        MODE_BY_TAB = {tab1: 1, tab2: 2, tab3: 3, tab4: 4}
+
+        def current_mode():
+            v = tabs.value
+            if v in MODE_BY_TAB:
+                return MODE_BY_TAB[v]
+            return MODE_BY_NAME.get(v, 1)
 
         pending_container = ui.column().classes('w-full gap-1')
         preview_container = ui.column().classes('w-full gap-2')
@@ -72,7 +81,13 @@ def video_page():
                         ui.video(v).classes('w-48')
 
         def do_assemble():
-            mode = MODE_MAP[tabs.value]
+            mode = current_mode()
+            voice_count = len(glob.glob(os.path.join(config.OUTPUT_VOICES, "*_final.wav")))
+            if voice_count == 0:
+                ui.notify('找不到語音檔 (*_final.wav)，請先完成語音渲染。', type='warning')
+                return
+
+            ui.notify(f'開始合成（模式 {mode}），請看下方即時 Log 進度。', type='info')
             assemble_btn.disable()
 
             def on_done(result, error):
@@ -80,7 +95,6 @@ def video_page():
                 refresh_pending()
                 refresh_outputs()
 
-            voice_count = len(glob.glob(os.path.join(config.OUTPUT_VOICES, "*_final.wav")))
             ok = run_in_background(
                 '影片合成', step6_video_assembly.run,
                 mode=mode,
