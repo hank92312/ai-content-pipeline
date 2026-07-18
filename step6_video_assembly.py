@@ -1,7 +1,10 @@
 import os
 import glob
+import shutil
+import subprocess
 import sys
 import json
+import tempfile
 import numpy as np
 import config
 from PIL import Image, ImageDraw, ImageFont
@@ -16,6 +19,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 try:
     from moviepy import AudioFileClip, ImageClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip, CompositeAudioClip
+    from moviepy.config import FFMPEG_BINARY
     import moviepy.video.fx as vfx
     import moviepy.audio.fx as afx
     import re
@@ -51,10 +55,10 @@ def extract_file_index(filepath: str) -> int:
         return 0
 
 
-def create_subtitle_clip(text, keywords, duration, font_path=FONT_PATH, font_size=58, stroke_width=5):
+def render_subtitle_image(text, keywords, font_path=FONT_PATH, font_size=58, stroke_width=5):
     """
     使用 Pillow 動態繪製每一句短影音字幕。
-    支援多色高亮 (關鍵字: 黃色, 驚嘆號: 紅色)，並回傳透明背景的 MoviePy ImageClip。
+    支援多色高亮 (關鍵字: 黃色, 驚嘆號: 紅色)，回傳透明背景的 PIL Image (1080x600)。
     """
     try:
         font = ImageFont.truetype(font_path, font_size)
@@ -118,10 +122,110 @@ def create_subtitle_clip(text, keywords, duration, font_path=FONT_PATH, font_siz
 
         start_y += font_size + 20
 
-    clip = (ImageClip(np.array(img))
-            .with_duration(duration))
+    return img
 
-    return clip
+
+def create_subtitle_clip(text, keywords, duration, font_path=FONT_PATH, font_size=58, stroke_width=5):
+    """回傳透明背景的 MoviePy ImageClip 版字幕 (保留給仍以 MoviePy 疊字幕的呼叫端)。"""
+    img = render_subtitle_image(text, keywords, font_path=font_path, font_size=font_size, stroke_width=stroke_width)
+    return ImageClip(np.array(img)).with_duration(duration)
+
+
+def ffmpeg_slideshow_bg(img_paths, voice_path, bgm_path, duration, out_path, log=print):
+    """
+    以 ffmpeg 將圖片序列合成為背景影片 (等分時長 + 1 秒交叉淡入轉場)，
+    並混入口播與可選 BGM (音量 config.BGM_VOLUME)。
+    時間軸與原 MoviePy 合成一致：轉場使背景縮短 (n-1) 秒，尾端以黑幕補滿至音訊長度。
+    """
+    n = len(img_paths)
+    tpi = duration / n
+
+    cmd = [FFMPEG_BINARY, "-y"]
+    for p in img_paths:
+        cmd += ["-loop", "1", "-t", f"{tpi:.3f}", "-i", p]
+    cmd += ["-i", voice_path]
+    if bgm_path:
+        cmd += ["-stream_loop", "-1", "-i", bgm_path]
+
+    filters = []
+    for i in range(n):
+        filters.append(f"[{i}:v]scale=1080:1920,setsar=1,fps={FPS},format=yuv420p,settb=AVTB[s{i}]")
+    last = "s0"
+    for k in range(1, n):
+        filters.append(f"[{last}][s{k}]xfade=transition=fade:duration=1:offset={k * (tpi - 1):.3f}[x{k}]")
+        last = f"x{k}"
+    if n > 1:
+        filters.append(f"[{last}]tpad=stop_mode=add:stop_duration={n - 1}:color=black[vbg]")
+    else:
+        filters.append(f"[{last}]copy[vbg]")
+
+    voice_idx = n
+    if bgm_path:
+        filters.append(f"[{voice_idx + 1}:a]volume={config.BGM_VOLUME},atrim=0:{duration:.3f}[bgm]")
+        filters.append(f"[{voice_idx}:a][bgm]amix=inputs=2:duration=first:normalize=0[abg]")
+        audio_map = "[abg]"
+    else:
+        audio_map = f"{voice_idx}:a"
+
+    cmd += [
+        "-filter_complex", ";".join(filters),
+        "-map", "[vbg]", "-map", audio_map,
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "14",
+        "-c:a", "aac", "-ac", "2", "-t", f"{duration:.3f}", out_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if result.returncode != 0:
+        tail = "\n".join(result.stderr.strip().splitlines()[-5:])
+        log(f"  ❌ ffmpeg 背景合成失敗：\n{tail}")
+        return False
+    return True
+
+
+def ffmpeg_overlay_encode(bg_path, overlays, out_path, log=print):
+    """
+    以 ffmpeg 將頭像/字幕 PNG 疊加到背景影片上並完成最終編碼。
+    overlays: [{path, x, y, start, end}]，start/end 為 None 代表全程顯示；
+    可為空清單 (單純把背景重新編碼輸出)。
+    編碼依序嘗試 AMD AMF → Intel QSV → CPU libx264，回傳是否成功。
+    """
+    cmd_base = [FFMPEG_BINARY, "-y", "-i", bg_path]
+    for ov in overlays:
+        cmd_base += ["-i", ov["path"]]
+
+    if overlays:
+        steps = []
+        last = "[0:v]"
+        for i, ov in enumerate(overlays):
+            out_label = "[vout]" if i == len(overlays) - 1 else f"[v{i + 1}]"
+            enable = ""
+            if ov["start"] is not None:
+                enable = f":enable='between(t,{ov['start']:.3f},{ov['end']:.3f})'"
+            steps.append(f"{last}[{i + 1}:v]overlay={ov['x']}:{ov['y']}{enable}{out_label}")
+            last = out_label
+        cmd_base += ["-filter_complex", ";".join(steps), "-map", "[vout]"]
+    else:
+        cmd_base += ["-map", "0:v"]
+
+    cmd_base += ["-map", "0:a?", "-c:a", "copy"]
+
+    attempts = [
+        ("⚡ 嘗試使用 AMD GPU 硬體加速編碼 (AMF)...", ["-c:v", "h264_amf", "-preset", "balanced"]),
+        ("⚡ 嘗試使用 Intel QuickSync (QSV) 硬體加速編碼...", ["-c:v", "h264_qsv", "-global_quality", "25"]),
+        ("🐢 使用標準 CPU 模式進行編碼 (這可能需要較長時間)...", ["-c:v", "libx264"]),
+    ]
+    for msg, video_args in attempts:
+        log(f"  {msg}")
+        result = subprocess.run(
+            cmd_base + video_args + ["-pix_fmt", "yuv420p", out_path],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if result.returncode == 0:
+            return True
+        log("  ⚠️ 此編碼器失敗，嘗試下一項...")
+
+    tail = "\n".join(result.stderr.strip().splitlines()[-5:])
+    log(f"  ❌ 所有編碼器皆失敗，最後錯誤訊息：\n{tail}")
+    return False
 
 
 def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0, log=print):
@@ -161,6 +265,9 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
         bgm_clip = None
         bg_video = None
         bg_clip = None
+        final_clips = []
+        slideshow_imgs = None  # 純圖片背景 → 交給 ffmpeg 快速合成，不經過 MoviePy
+        slideshow_bgm = None
 
         audio_clip = AudioFileClip(v_path)
         audio_duration = audio_clip.duration
@@ -181,25 +288,8 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
             time_per_image = audio_duration / len(img_paths)
             log(f"  🖼 找到 {len(img_paths)} 張背景圖，每張圖將顯示 {time_per_image:.1f} 秒...")
 
-            image_clips = []
-            for img_path in img_paths:
-                clip = (ImageClip(img_path)
-                        .with_duration(time_per_image)
-                        .resized(TARGET_RESOLUTION))
-                image_clips.append(clip)
-
-            # 3. 組合背景片斷
-            processed_clips = []
-            for i, clip in enumerate(image_clips):
-                if i > 0:
-                    processed_clips.append(clip.with_effects([vfx.CrossFadeIn(1.0)]))
-                else:
-                    processed_clips.append(clip)
-
-            bg_clip = concatenate_videoclips(processed_clips, padding=-1.0, method="compose")
-            bg_clip = bg_clip.with_audio(audio_clip)
-
-            final_clips = [bg_clip]
+            # 純圖片背景 → 交給 ffmpeg 快速合成 (xfade 交叉淡入)
+            slideshow_imgs = img_paths
         elif mode in [2, 3]:
             # 2 & 3. 素材模式尋找對應的影片、圖片與音效
             m = re.search(r'_(\d+)$', basename)
@@ -251,24 +341,30 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
 
             log(f"  🎨 使用素材模式處理影片：ID{news_id} (找到 {len(asset_video_paths)} 個影片, {len(asset_img_paths)} 張圖片)")
 
-            # 準備音訊 (BGM 是選配)
-            if os.path.exists(asset_mp3):
-                bgm_clip = AudioFileClip(asset_mp3)
-                if bgm_clip.duration is not None and bgm_clip.duration < audio_duration:
-                    bgm_clip = bgm_clip.with_effects([
-                        afx.AudioLoop(duration=audio_duration),
-                        afx.MultiplyVolume(config.BGM_VOLUME)
-                    ])
-                else:
-                    bgm_clip = bgm_clip.with_duration(audio_duration).with_effects([
-                        afx.MultiplyVolume(config.BGM_VOLUME)
-                    ])
-                final_audio = CompositeAudioClip([bgm_clip, audio_clip]).with_duration(audio_duration)
+            if not asset_video_paths:
+                # 純圖片背景 → 交給 ffmpeg 快速合成 (xfade 交叉淡入 + BGM 混音)
+                slideshow_imgs = asset_img_paths
+                if os.path.exists(asset_mp3):
+                    slideshow_bgm = asset_mp3
             else:
-                final_audio = audio_clip
+                # 有影片素材 → 維持 MoviePy 合成流程
+                # 準備音訊 (BGM 是選配)
+                if os.path.exists(asset_mp3):
+                    bgm_clip = AudioFileClip(asset_mp3)
+                    if bgm_clip.duration is not None and bgm_clip.duration < audio_duration:
+                        bgm_clip = bgm_clip.with_effects([
+                            afx.AudioLoop(duration=audio_duration),
+                            afx.MultiplyVolume(config.BGM_VOLUME)
+                        ])
+                    else:
+                        bgm_clip = bgm_clip.with_duration(audio_duration).with_effects([
+                            afx.MultiplyVolume(config.BGM_VOLUME)
+                        ])
+                    final_audio = CompositeAudioClip([bgm_clip, audio_clip]).with_duration(audio_duration)
+                else:
+                    final_audio = audio_clip
 
-            # --- 準備影像底圖 ---
-            if asset_video_paths:
+                # --- 準備影像底圖 ---
                 video_clips = []
                 for v_p in asset_video_paths:
                     try:
@@ -293,25 +389,23 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
                 else:
                     # 如果讀取失敗回退到純圖片
                     bg_clip = None
-            else:
-                bg_clip = None
 
-            # 如果沒影片或讀取失敗，使用圖片
-            if bg_clip is None and asset_img_paths:
-                if len(asset_img_paths) > 1:
-                    time_per_image = audio_duration / len(asset_img_paths)
-                    image_clips = []
-                    for i, img_path in enumerate(asset_img_paths):
-                        clip = ImageClip(img_path).with_duration(time_per_image).resized(TARGET_RESOLUTION)
-                        if i > 0:
-                            clip = clip.with_effects([vfx.CrossFadeIn(1.0)])
-                        image_clips.append(clip)
-                    bg_clip = concatenate_videoclips(image_clips, padding=-1.0, method="compose")
-                else:
-                    bg_clip = ImageClip(asset_img_paths[0]).with_duration(audio_duration).resized(TARGET_RESOLUTION)
+                # 如果影片讀取失敗，使用圖片
+                if bg_clip is None and asset_img_paths:
+                    if len(asset_img_paths) > 1:
+                        time_per_image = audio_duration / len(asset_img_paths)
+                        image_clips = []
+                        for i, img_path in enumerate(asset_img_paths):
+                            clip = ImageClip(img_path).with_duration(time_per_image).resized(TARGET_RESOLUTION)
+                            if i > 0:
+                                clip = clip.with_effects([vfx.CrossFadeIn(1.0)])
+                            image_clips.append(clip)
+                        bg_clip = concatenate_videoclips(image_clips, padding=-1.0, method="compose")
+                    else:
+                        bg_clip = ImageClip(asset_img_paths[0]).with_duration(audio_duration).resized(TARGET_RESOLUTION)
 
-            bg_clip = bg_clip.with_audio(final_audio)
-            final_clips = [bg_clip]
+                bg_clip = bg_clip.with_audio(final_audio)
+                final_clips = [bg_clip]
 
         elif mode == 4:
             m = re.search(r'_(\d+)$', basename)
@@ -373,6 +467,15 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
                 else:
                     log(f"  ⚠️ 無法找到模組生成圖片 {pattern}")
 
+            # --- 檢查素材音樂是否存在 ---
+            bgm_path = None
+            if custom_music == 1 and news_id:
+                asset_mp3 = os.path.join("assets", f"ID{news_id}.mp3")
+                if os.path.exists(asset_mp3):
+                    bgm_path = asset_mp3
+                else:
+                    log(f"  ⚠️ 無法找到素材音樂 {asset_mp3}")
+
             # --- 組合影像底圖 ---
             if bg_video_clip is not None:
                 if len(img_clip_list) > 0:
@@ -387,29 +490,20 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
                 else:
                     # 只有影片 => Loop播滿
                     bg_clip = bg_video_clip.with_effects([vfx.Loop(duration=audio_duration)])
+            elif len(img_clip_list) > 0:
+                # 只有圖片 => 交給 ffmpeg 快速合成 (均分時長 + xfade 交叉淡入)
+                slideshow_imgs = img_clip_list
+                slideshow_bgm = bgm_path
             else:
-                if len(img_clip_list) > 0:
-                    # 只有圖片 => 均分圖片顯示時間
-                    time_per_image = audio_duration / len(img_clip_list)
-                    processed_clips = []
-                    for i, img_path in enumerate(img_clip_list):
-                        clip = ImageClip(img_path).with_duration(time_per_image).resized(TARGET_RESOLUTION)
-                        if i > 0:
-                            processed_clips.append(clip.with_effects([vfx.CrossFadeIn(1.0)]))
-                        else:
-                            processed_clips.append(clip)
-                    bg_clip = concatenate_videoclips(processed_clips, padding=-1.0, method="compose")
-                else:
-                    # 完全沒畫面，給黑屏
-                    black_frame = np.zeros((1920, 1080, 3), dtype=np.uint8)
-                    bg_clip = ImageClip(black_frame).with_duration(audio_duration)
+                # 完全沒畫面，給黑屏
+                black_frame = np.zeros((1920, 1080, 3), dtype=np.uint8)
+                bg_clip = ImageClip(black_frame).with_duration(audio_duration)
 
-            # --- 合聲音樂 ---
-            final_audio = audio_clip
-            if custom_music == 1 and news_id:
-                asset_mp3 = os.path.join("assets", f"ID{news_id}.mp3")
-                if os.path.exists(asset_mp3):
-                    bgm_clip = AudioFileClip(asset_mp3)
+            # --- 合聲音樂 (MoviePy 路徑才需要，ffmpeg 路徑已在合成時混音) ---
+            if slideshow_imgs is None:
+                final_audio = audio_clip
+                if bgm_path:
+                    bgm_clip = AudioFileClip(bgm_path)
                     if bgm_clip.duration is not None and bgm_clip.duration < audio_duration:
                         bgm_clip = bgm_clip.with_effects([
                             afx.AudioLoop(duration=audio_duration),
@@ -420,13 +514,15 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
                             afx.MultiplyVolume(config.BGM_VOLUME)
                         ])
                     final_audio = CompositeAudioClip([bgm_clip, audio_clip]).with_duration(audio_duration)
-                else:
-                    log(f"  ⚠️ 無法找到素材音樂 {asset_mp3}")
 
-            bg_clip = bg_clip.with_audio(final_audio)
-            final_clips = [bg_clip]
+                bg_clip = bg_clip.with_audio(final_audio)
+                final_clips = [bg_clip]
 
-        # 4. 疊加頭像
+        # 4. 準備疊加素材 (頭像 + 字幕圖)。改由 ffmpeg overlay 疊加：
+        #    MoviePy 只負責輸出背景 (合成負擔大減)，字幕圖仍用同一套 Pillow 邏輯繪製，畫面完全一致。
+        overlay_dir = tempfile.mkdtemp(prefix="step6_overlay_")
+        overlays = []
+
         add_avatar = False
         if mode in [1, 2]:
             add_avatar = has_avatar
@@ -435,11 +531,16 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
 
         if add_avatar:
             log("  🙎‍♀️ 疊加動態/虛擬圖相 (此版本為靜態圖片 sample.png)...")
-            avatar_clip = (ImageClip(AVATAR_PATH)
-                           .resized(width=680)
-                           .with_duration(audio_duration)
-                           .with_position(("right", "bottom")))
-            final_clips.append(avatar_clip)
+            av_img = Image.open(AVATAR_PATH).convert("RGBA")
+            av_h = round(av_img.height * 680 / av_img.width)
+            av_img = av_img.resize((680, av_h), Image.LANCZOS)
+            avatar_png = os.path.join(overlay_dir, "avatar.png")
+            av_img.save(avatar_png)
+            overlays.append({
+                "path": avatar_png,
+                "x": "main_w-overlay_w", "y": "main_h-overlay_h",
+                "start": None, "end": None,
+            })
 
         # 5. 處理動態字幕
         subs_json_path = os.path.join(VOICES_DIR, f"{basename}_subs.json")
@@ -459,59 +560,97 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
 
             log(f"  📝 處理中 {len(subs_data)} 句動態字幕...")
 
-            for sub in subs_data:
-                text = sub["text"]
-                start_t = sub["start"]
-                duration = sub["duration"]
-
-                txt_clip = create_subtitle_clip(text, keywords, duration)
-                txt_clip = (txt_clip
-                            .with_start(start_t)
-                            .with_position(("center", 1350)))
-                final_clips.append(txt_clip)
+            for i, sub in enumerate(subs_data):
+                sub_img = render_subtitle_image(sub["text"], keywords)
+                sub_png = os.path.join(overlay_dir, f"sub_{i}.png")
+                sub_img.save(sub_png)
+                overlays.append({
+                    "path": sub_png,
+                    "x": "(main_w-overlay_w)/2", "y": "1350",
+                    "start": sub["start"], "end": sub["start"] + sub["duration"],
+                })
 
         # 6. 生成最終合成並輸出
-        final_video = CompositeVideoClip(final_clips, size=TARGET_RESOLUTION)
         # 直接使用 _subtitled.mp4 名稱，不再產出無字幕版本
         out_path = os.path.join(VIDEOS_DIR, f"{basename}_subtitled.mp4")
         log(f"  🎥 開始寫入最終帶字幕影片: {out_path} ...\n")
 
-        success = False
-        # 1. 優先嘗試 AMD GPU 硬體加速 (AMF)
-        try:
-            log("  ⚡ 嘗試使用 AMD GPU 硬體加速編碼 (AMF)...")
-            final_video.write_videofile(out_path, fps=FPS, codec="h264_amf", audio_codec="aac", preset="balanced", logger="bar")
-            success = True
-        except Exception:
-            log("  ⚠️ AMD AMF 不支援，嘗試下一項...")
+        final_video = None
+        temp_bg = os.path.join(overlay_dir, "bg_temp.mp4")
+        stage1_ok = True
 
-        # 2. 次之嘗試 Intel QuickSync (QSV) 加速
-        if not success:
+        if slideshow_imgs is not None:
+            # 純圖片背景：ffmpeg 直接產生背景 (xfade 轉場 + 混音)，速度最快
+            log("  🎞 階段 1/2：ffmpeg 產生背景影片 (圖片轉場 + 混音)...")
+            stage1_ok = ffmpeg_slideshow_bg(
+                slideshow_imgs, v_path, slideshow_bgm, audio_duration, temp_bg, log=log,
+            )
+        elif overlays:
+            # 影片類背景：MoviePy 快速寫出高品質背景中繼檔 (時長對齊音訊，尾端不足處為黑幕)
+            final_video = CompositeVideoClip(final_clips, size=TARGET_RESOLUTION).with_duration(audio_duration)
+            log("  🎞 階段 1/2：輸出背景影片 (快速中繼檔)...")
+            final_video.write_videofile(
+                temp_bg, fps=FPS, codec="libx264", audio_codec="aac",
+                preset="ultrafast", ffmpeg_params=["-crf", "14"], logger="bar",
+            )
+
+        if not stage1_ok:
+            log(f"  ❌ 背景合成失敗，跳過 {basename}")
+            failed_count += 1
+            audio_clip.close()
+            shutil.rmtree(overlay_dir, ignore_errors=True)
+            continue
+
+        if slideshow_imgs is not None or overlays:
+            log("  🎞 階段 2/2：ffmpeg 疊加頭像/字幕並編碼...")
+            if not ffmpeg_overlay_encode(temp_bg, overlays, out_path, log=log):
+                log(f"  ❌ 最終編碼失敗，跳過 {basename}")
+                failed_count += 1
+                if final_video:
+                    final_video.close()
+                audio_clip.close()
+                shutil.rmtree(overlay_dir, ignore_errors=True)
+                continue
+        else:
+            # 沒有任何疊加物 (無頭像也無字幕) 且非圖片背景：維持原本 MoviePy 直接輸出 + 編碼降級鏈
+            final_video = CompositeVideoClip(final_clips, size=TARGET_RESOLUTION)
+            success = False
             try:
-                log("  ⚡ 嘗試使用 Intel QuickSync (QSV) 硬體加速編碼...")
-                # QSV 使用 global_quality 來控制品質，20-25 為平衡點
-                final_video.write_videofile(
-                    out_path,
-                    fps=FPS,
-                    codec="h264_qsv",
-                    audio_codec="aac",
-                    logger="bar",
-                    ffmpeg_params=["-global_quality", "25"]
-                )
+                log("  ⚡ 嘗試使用 AMD GPU 硬體加速編碼 (AMF)...")
+                final_video.write_videofile(out_path, fps=FPS, codec="h264_amf", audio_codec="aac", preset="balanced", logger="bar")
                 success = True
             except Exception:
-                log("  ⚠️ Intel QSV 不支援，切換至標準 CPU 模式...")
+                log("  ⚠️ AMD AMF 不支援，嘗試下一項...")
 
-        # 3. 最後備案：標準 CPU 編碼 (libx264)
-        if not success:
-            log("  🐢 使用標準 CPU 模式進行編碼 (這可能需要較長時間)...")
-            final_video.write_videofile(out_path, fps=FPS, codec="libx264", audio_codec="aac", logger="bar")
+            if not success:
+                try:
+                    log("  ⚡ 嘗試使用 Intel QuickSync (QSV) 硬體加速編碼...")
+                    # QSV 使用 global_quality 來控制品質，20-25 為平衡點
+                    final_video.write_videofile(
+                        out_path,
+                        fps=FPS,
+                        codec="h264_qsv",
+                        audio_codec="aac",
+                        logger="bar",
+                        ffmpeg_params=["-global_quality", "25"]
+                    )
+                    success = True
+                except Exception:
+                    log("  ⚠️ Intel QSV 不支援，切換至標準 CPU 模式...")
+
+            if not success:
+                log("  🐢 使用標準 CPU 模式進行編碼 (這可能需要較長時間)...")
+                final_video.write_videofile(out_path, fps=FPS, codec="libx264", audio_codec="aac", logger="bar")
 
         # 7. 釋放記憶體與關閉所有檔案控制代碼，避免 WinError 6 錯誤
         log(f"  🧹 正在清理暫存資源...")
 
-        # 關閉最終組合影片
-        final_video.close()
+        # 刪除疊加素材與背景中繼檔
+        shutil.rmtree(overlay_dir, ignore_errors=True)
+
+        # 關閉最終組合影片 (純 ffmpeg 路徑不會建立 MoviePy 合成物件)
+        if final_video:
+            final_video.close()
 
         # 逐一關閉所有加入組合的片段 (包含字幕、頭像、背景)
         for clip in final_clips:
