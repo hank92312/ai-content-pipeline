@@ -1,7 +1,7 @@
 from nicegui import ui
 
 from gui.layout import page_shell
-from gui.data import get_pipeline_overview, next_step_for
+from gui.data import get_pipeline_overview, next_step_for, delete_news_item
 
 NEXT_STEP_LABELS = {
     "select": "▶ 前往選題台",
@@ -27,12 +27,34 @@ def _stage_dot(done: bool):
     )
 
 
-def _render_card(item):
+def _confirm_delete(item, on_deleted):
+    with ui.dialog() as dialog, ui.card():
+        ui.label('確定要移除這筆資料嗎？').classes('text-base font-medium')
+        ui.label(f"#{item['id']} · {item['title']}").classes('text-sm text-slate-400')
+        ui.label('將同時刪除已產生的腳本、語音、配圖、影片檔案，此動作無法復原。').classes('text-xs text-red-400 mt-1')
+        with ui.row().classes('justify-end w-full mt-2'):
+            ui.button('取消', on_click=dialog.close).props('flat')
+
+            def do_delete():
+                delete_news_item(item['id'])
+                dialog.close()
+                ui.notify(f"已移除 #{item['id']}", type='positive')
+                on_deleted()
+
+            ui.button('確定移除', on_click=do_delete, color='negative')
+    dialog.open()
+
+
+def _render_card(item, on_deleted):
     with ui.card().classes('w-full'):
         with ui.row().classes('items-center justify-between w-full'):
             with ui.column().classes('gap-0'):
                 ui.label(f"#{item['id']} · {item['category']}").classes('text-xs text-slate-400')
-                ui.label(item['title']).classes('text-base font-medium')
+                ui.label(item['title']).classes(
+                    'text-base font-medium cursor-pointer hover:text-red-400 hover:underline'
+                ).tooltip('點擊移除此筆資料').on(
+                    'click', lambda i=item: _confirm_delete(i, on_deleted)
+                )
 
             next_step = next_step_for(item)
             if next_step:
@@ -80,7 +102,7 @@ def dashboard_page():
                 if not overview:
                     ui.label('目前沒有符合條件的項目。').classes('text-slate-400')
                 for item in overview:
-                    _render_card(item)
+                    _render_card(item, refresh)
 
         with ui.row().classes('items-center gap-2'):
             ui.button('全部', on_click=lambda: (filter_state.update(value='all'), refresh())).props('flat')

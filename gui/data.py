@@ -41,6 +41,33 @@ def get_pipeline_overview():
     return overview
 
 
+def delete_news_item(news_id):
+    """從 DB 移除該筆新聞，並清除已產生的腳本/語音/配圖/影片檔案。"""
+    conn = sqlite3.connect(config.DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT category FROM DailyNews WHERE id = ?", (news_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return
+
+    category = row[0]
+    basename = f"script_{category}_{news_id}"
+
+    cursor.execute("DELETE FROM DailyNews WHERE id = ?", (news_id,))
+    conn.commit()
+    conn.close()
+
+    for path in glob.glob(os.path.join(config.OUTPUT_SCRIPTS, f"{basename}.*")):
+        os.remove(path)
+    for path in glob.glob(os.path.join(config.OUTPUT_VOICES, f"{basename}_*")):
+        os.remove(path)
+    for path in glob.glob(os.path.join(config.OUTPUT_IMAGES, f"{basename}_*")):
+        os.remove(path)
+    for path in glob.glob(os.path.join(config.OUTPUT_VIDEOS, f"{basename}_*")):
+        os.remove(path)
+
+
 def next_step_for(item):
     """依進度判斷下一步應執行哪個模組，回傳模組代碼字串或 None (代表已全部完成)"""
     if not item["is_selected"] and not item["is_processed"]:
