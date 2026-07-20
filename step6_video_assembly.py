@@ -5,6 +5,7 @@ import subprocess
 import sys
 import json
 import tempfile
+import time
 import numpy as np
 import config
 from PIL import Image, ImageDraw, ImageFont
@@ -256,9 +257,11 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
     success_count = 0
     failed_count = 0
     outputs = []
+    run_start = time.time()
 
     for v_path in voice_files:
         basename = os.path.basename(v_path).replace("_final.wav", "")
+        item_start = time.time()
         log(f"\n▶ 正在合成並上字幕：{basename}")
 
         # 初始化素材變數，確保每輪循環都能正確釋放
@@ -595,7 +598,7 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
             )
 
         if not stage1_ok:
-            log(f"  ❌ 背景合成失敗，跳過 {basename}")
+            log(f"  ❌ 背景合成失敗，跳過 {basename} (耗時 {time.time() - item_start:.1f} 秒)")
             failed_count += 1
             audio_clip.close()
             shutil.rmtree(overlay_dir, ignore_errors=True)
@@ -604,7 +607,7 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
         if slideshow_imgs is not None or overlays:
             log("  🎞 階段 2/2：ffmpeg 疊加頭像/字幕並編碼...")
             if not ffmpeg_overlay_encode(temp_bg, overlays, out_path, log=log):
-                log(f"  ❌ 最終編碼失敗，跳過 {basename}")
+                log(f"  ❌ 最終編碼失敗，跳過 {basename} (耗時 {time.time() - item_start:.1f} 秒)")
                 failed_count += 1
                 if final_video:
                     final_video.close()
@@ -685,11 +688,15 @@ def run(mode=1, custom_video=0, custom_image=0, custom_anchor=0, custom_music=0,
         import gc
         gc.collect()
 
+        item_elapsed = time.time() - item_start
+        log(f"  ⏱ {basename} 合成完畢，耗時 {item_elapsed:.1f} 秒")
+
         success_count += 1
         outputs.append(out_path)
 
-    log("\n🎉 所有影片合成暨字幕壓製完畢！")
-    return {"success": success_count, "failed": failed_count, "outputs": outputs}
+    run_elapsed = time.time() - run_start
+    log(f"\n🎉 所有影片合成暨字幕壓製完畢！總耗時 {run_elapsed:.1f} 秒 (成功 {success_count} 支，失敗 {failed_count} 支)")
+    return {"success": success_count, "failed": failed_count, "outputs": outputs, "elapsed": run_elapsed}
 
 
 def main():
